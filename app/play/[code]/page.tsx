@@ -5,6 +5,30 @@ import { supabase, type Game, type GamePlayer, type Question, type PlayerAnswer,
 
 type Phase = 'join' | 'waiting' | 'playing' | 'finished'
 
+function Header({ status, name }: { status?: string; name?: string }) {
+  return (
+    <header className="px-5 py-3 flex items-center justify-between border-b relative z-10"
+      style={{ borderColor: 'var(--border)', background: 'rgba(10,14,19,0.7)', backdropFilter: 'blur(12px)' }}>
+      <div className="flex items-center gap-2.5">
+        <span className="text-lg animate-spin-slow">⚽</span>
+        <div className="leading-none">
+          <div className="font-display text-lg tracking-tight" style={{ color: 'var(--text)' }}>FOOTY TRIVIA</div>
+          <div className="label-micro" style={{ color: 'var(--mint)' }}>When you shoot, score</div>
+        </div>
+      </div>
+      {status && (
+        <div className="flex items-center gap-1.5">
+          {status === 'LIVE' && <div className="live-dot" />}
+          <span className="label-micro" style={{ color: status === 'LIVE' ? 'var(--red)' : 'var(--text-muted)' }}>{status}</span>
+        </div>
+      )}
+      {!status && name && (
+        <span className="label-micro">{name}</span>
+      )}
+    </header>
+  )
+}
+
 export default function PlayPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = use(params)
 
@@ -22,7 +46,7 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   const [timeLeft, setTimeLeft] = useState(0)
   const [goalFlash, setGoalFlash] = useState(false)
   const [shakeInput, setShakeInput] = useState(false)
-  const [shots, setShots] = useState(0) // total guesses
+  const [shots, setShots] = useState(0)
   const [joining, setJoining] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const submitting = useRef(false)
@@ -69,7 +93,6 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
     setAllPlayers((players as GamePlayer[]) || [])
   }, [])
 
-  // Subscribe to game state changes after joining
   useEffect(() => {
     if (!game) return
     if (game.question_id) loadQuestion(game.question_id)
@@ -96,13 +119,11 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.id])
 
-  // Load all data when finished
   useEffect(() => {
     if (phase === 'finished' && game) loadAllData(game.id)
     if (phase === 'playing') setTimeout(() => inputRef.current?.focus(), 300)
   }, [phase, game, loadAllData])
 
-  // Countdown timer
   useEffect(() => {
     if (!game?.ends_at || game.status !== 'active') return
     const tick = () => setTimeLeft(Math.max(0, Math.ceil((new Date(game.ends_at!).getTime() - Date.now()) / 1000)))
@@ -120,7 +141,6 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
     setInputValue('')
     setShots(s => s + 1)
 
-    // Check if already correctly found this normalised form
     if (myAnswers.some(a => a.answer_normalized === normalized)) {
       submitting.current = false
       return
@@ -128,13 +148,11 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
 
     const { correct, index } = checkAnswer(raw, question.answers)
 
-    // Check if already found this position
     if (correct && myAnswers.some(a => a.matched_index === index)) {
       submitting.current = false
       return
     }
 
-    // Optimistically update local state immediately — don't wait for real-time
     if (correct) {
       const optimistic: PlayerAnswer = {
         id: crypto.randomUUID(),
@@ -154,7 +172,6 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
       setTimeout(() => setShakeInput(false), 400)
     }
 
-    // Persist to DB in background
     await supabase.from('player_answers').insert({
       game_id: game.id,
       player_id: player.id,
@@ -169,46 +186,47 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
 
   // ── JOIN ────────────────────────────────────────────────────
   if (phase === 'join') return (
-    <div className="min-h-screen flex flex-col">
-      <header className="px-5 py-4" style={{ background: 'var(--navy)' }}>
-        <div className="flex items-center gap-3">
-          <span className="text-xl">⚽</span>
-          <h1 className="text-white font-black tracking-tight">FOOTY TRIVIA SHOTS</h1>
-        </div>
-        <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          Room: <span className="font-bold text-white">{code.toUpperCase()}</span>
-        </p>
-      </header>
+    <div className="min-h-screen flex flex-col stadium-bg noise">
+      <div className="relative z-10 flex-1 flex flex-col">
+        <Header status={code.toUpperCase()} />
+        <div className="flex-1 flex flex-col justify-center px-5 py-8 max-w-sm mx-auto w-full">
+          <div className="text-center mb-8">
+            <div className="relative inline-block mb-5">
+              <div className="absolute inset-0 -m-4 rounded-full blur-2xl" style={{ background: 'radial-gradient(circle, var(--mint-glow) 0%, transparent 70%)' }} />
+              <div className="relative text-6xl animate-spin-slow">⚽</div>
+            </div>
+            <h2 className="font-display text-4xl tracking-tight mb-2" style={{ color: 'var(--text)' }}>JOIN THE SQUAD</h2>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Enter your name to line up for kick off</p>
+          </div>
 
-      <div className="flex-1 flex flex-col justify-center px-5 py-8 max-w-sm mx-auto w-full">
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-4">⚽</div>
-          <h2 className="text-2xl font-black" style={{ color: 'var(--navy)' }}>What&apos;s your name?</h2>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>This is how you&apos;ll appear on the leaderboard</p>
-        </div>
+          <div className="card p-5">
+            <label className="label-micro block mb-2">Your name</label>
+            <input
+              autoFocus
+              type="text"
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && joinGame()}
+              placeholder="e.g. Mark"
+              maxLength={20}
+              className="w-full px-4 py-3.5 rounded-xl text-lg font-bold outline-none mb-3"
+              style={{
+                background: 'var(--surface-2)',
+                border: '1.5px solid var(--border)',
+                color: 'var(--text)',
+              }}
+            />
+            {nameError && <p className="text-sm mb-3 font-medium" style={{ color: 'var(--red)' }}>{nameError}</p>}
+            <button onClick={joinGame} disabled={joining}
+              className="btn-primary w-full py-4 text-base">
+              {joining ? 'JOINING...' : 'JOIN MATCH'}
+            </button>
+          </div>
 
-        <div className="rounded-2xl p-6" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-lg)' }}>
-          <input
-            autoFocus
-            type="text"
-            value={nameInput}
-            onChange={e => setNameInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && joinGame()}
-            placeholder="e.g. Mark"
-            maxLength={20}
-            className="w-full px-4 py-3.5 rounded-xl text-lg font-bold outline-none mb-3"
-            style={{
-              background: 'var(--surface-2)',
-              border: '1.5px solid var(--border)',
-              color: 'var(--text)',
-            }}
-          />
-          {nameError && <p className="text-sm mb-3 font-medium" style={{ color: 'var(--red)' }}>{nameError}</p>}
-          <button onClick={joinGame} disabled={joining}
-            className="w-full py-4 rounded-xl font-black text-lg transition-all active:scale-[0.98] disabled:opacity-50"
-            style={{ background: 'var(--navy)', color: '#fff' }}>
-            {joining ? 'Joining...' : 'Join Game'}
-          </button>
+          <div className="mt-6 flex items-center justify-center gap-2">
+            <span className="label-micro">Room</span>
+            <span className="font-display text-xl tracking-widest tabular" style={{ color: 'var(--mint)' }}>{code.toUpperCase()}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -216,26 +234,29 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
 
   // ── WAITING ─────────────────────────────────────────────────
   if (phase === 'waiting') return (
-    <div className="min-h-screen flex flex-col">
-      <header className="px-5 py-4" style={{ background: 'var(--navy)' }}>
-        <div className="flex items-center gap-3">
-          <span className="text-xl">⚽</span>
-          <h1 className="text-white font-black tracking-tight">FOOTY TRIVIA SHOTS</h1>
-        </div>
-      </header>
-      <div className="flex-1 flex flex-col items-center justify-center px-5 text-center">
-        <div className="text-6xl mb-6" style={{ animation: 'bounce 1.5s infinite' }}>⚽</div>
-        <h2 className="text-2xl font-black mb-2" style={{ color: 'var(--navy)' }}>You&apos;re in the squad, {name}!</h2>
-        <p className="mb-8" style={{ color: 'var(--text-muted)' }}>Waiting for the manager to kick off...</p>
-        <div className="flex gap-1.5 justify-center">
-          {[0,1,2].map(i => (
-            <div key={i} className="w-2.5 h-2.5 rounded-full animate-bounce"
-              style={{ background: 'var(--green)', animationDelay: `${i*0.2}s` }} />
-          ))}
-        </div>
-        <div className="mt-10 px-5 py-2.5 rounded-full text-sm font-bold"
-          style={{ background: 'var(--green-light)', color: 'var(--green)' }}>
-          Room {code.toUpperCase()}
+    <div className="min-h-screen flex flex-col stadium-bg noise">
+      <div className="relative z-10 flex-1 flex flex-col">
+        <Header status="LOBBY" />
+        <div className="flex-1 flex flex-col items-center justify-center px-5 text-center">
+          <div className="relative inline-block mb-6">
+            <div className="absolute inset-0 -m-6 rounded-full blur-2xl animate-breathe" style={{ background: 'radial-gradient(circle, var(--mint-glow) 0%, transparent 70%)' }} />
+            <div className="relative text-7xl animate-spin-slow">⚽</div>
+          </div>
+          <p className="label-micro mb-2" style={{ color: 'var(--mint)' }}>You&apos;re in the squad</p>
+          <h2 className="font-display text-5xl tracking-tight mb-3" style={{ color: 'var(--text)' }}>{name.toUpperCase()}</h2>
+          <p className="text-sm mb-8 max-w-xs" style={{ color: 'var(--text-muted)' }}>
+            Waiting for the manager to kick off. Stay sharp.
+          </p>
+          <div className="flex gap-2 justify-center mb-10">
+            {[0,1,2].map(i => (
+              <div key={i} className="w-2 h-2 rounded-full animate-breathe"
+                style={{ background: 'var(--mint)', animationDelay: `${i*0.25}s` }} />
+            ))}
+          </div>
+          <div className="card px-5 py-3 flex items-center gap-3">
+            <span className="label-micro">Room</span>
+            <span className="font-display text-2xl tracking-widest tabular" style={{ color: 'var(--mint)' }}>{code.toUpperCase()}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -247,130 +268,137 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
     const total = question.answers.length
     const foundIndices = new Set(myAnswers.map(a => a.matched_index))
     const timerPct = game?.ends_at ? timeLeft / (game.round_duration || 180) : 1
-    const timerColor = timerPct > 0.5 ? 'var(--green)' : timerPct > 0.25 ? 'var(--gold)' : 'var(--red)'
-    const r = 28; const circ = 2 * Math.PI * r
+    const timerColor = timerPct > 0.5 ? 'var(--mint)' : timerPct > 0.25 ? 'var(--gold)' : 'var(--red)'
+    const mins = Math.floor(timeLeft / 60)
+    const secs = String(timeLeft % 60).padStart(2, '0')
 
     return (
-      <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
+      <div className="min-h-screen flex flex-col stadium-bg noise">
         {/* Goal flash overlay */}
         {goalFlash && (
           <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-            <div className="animate-goal flex flex-col items-center">
-              <div className="text-7xl">⚽</div>
-              <div className="text-5xl font-black mt-2" style={{ color: 'var(--green)', textShadow: '0 2px 20px rgba(22,163,74,0.5)' }}>
+            <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at center, var(--mint-glow) 0%, transparent 60%)' }} />
+            <div className="animate-goal flex flex-col items-center relative">
+              <div className="text-8xl">⚽</div>
+              <div className="font-display text-7xl tracking-tight mt-2"
+                style={{ color: 'var(--mint)', textShadow: '0 0 40px rgba(0,255,135,0.8)' }}>
                 GOAL!
               </div>
             </div>
           </div>
         )}
 
-        {/* Header: score strip */}
-        <header style={{ background: 'var(--navy)' }}>
-          <div className="px-5 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">⚽</span>
-              <span className="text-white font-black text-sm tracking-tight">{name}</span>
-            </div>
-            {/* Timer circle */}
-            <div className="relative w-14 h-14">
-              <svg className="w-14 h-14 -rotate-90" viewBox="0 0 70 70">
-                <circle cx="35" cy="35" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="5" />
-                <circle cx="35" cy="35" r={r} fill="none"
-                  stroke={timerColor} strokeWidth="5" strokeLinecap="round"
-                  strokeDasharray={circ} strokeDashoffset={circ * (1 - timerPct)}
-                  style={{ transition: 'stroke-dashoffset 0.5s linear, stroke 0.5s' }}
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xs font-black tabular-nums text-white">
-                  {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+        <div className="relative z-10 flex-1 flex flex-col">
+          {/* Scoreboard header */}
+          <div className="border-b" style={{ borderColor: 'var(--border)', background: 'rgba(10,14,19,0.85)', backdropFilter: 'blur(12px)' }}>
+            <div className="px-5 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="live-dot animate-pulse-glow" />
+                <span className="label-micro" style={{ color: 'var(--red)' }}>LIVE</span>
+                <span className="label-micro">·</span>
+                <span className="label-micro">{name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="label-micro" style={{ color: timerColor }}>TIME</span>
+                <span className="font-display text-2xl tabular tracking-tight"
+                  style={{ color: timerColor, textShadow: `0 0 12px ${timerColor}` }}>
+                  {mins}:{secs}
                 </span>
               </div>
             </div>
-          </div>
 
-          {/* Goals / Shots bar */}
-          <div className="px-5 pb-3 flex gap-4">
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-3xl font-black tabular-nums" style={{ color: 'var(--green-bright)' }}>{goals}</span>
-              <span className="text-xs font-bold uppercase tracking-wide text-white opacity-60">Goals</span>
-            </div>
-            <div className="w-px" style={{ background: 'rgba(255,255,255,0.15)' }} />
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-3xl font-black tabular-nums text-white">{shots}</span>
-              <span className="text-xs font-bold uppercase tracking-wide text-white opacity-60">Shots</span>
-            </div>
-            <div className="ml-auto flex items-center">
-              <span className="text-xs font-bold" style={{ color: 'rgba(255,255,255,0.5)' }}>{goals}/{total} answers</span>
-            </div>
-          </div>
-
-          {/* Progress bar */}
-          <div className="h-1" style={{ background: 'rgba(255,255,255,0.1)' }}>
-            <div className="h-full transition-all duration-300"
-              style={{ width: `${(goals / total) * 100}%`, background: 'var(--green-bright)' }} />
-          </div>
-        </header>
-
-        {/* Question */}
-        <div className="px-4 pt-4 pb-2">
-          <div className="rounded-xl px-4 py-3" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}>
-            <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--text-faint)' }}>{question.category}</p>
-            <p className="font-semibold text-sm leading-snug">{question.question}</p>
-          </div>
-        </div>
-
-        {/* Input */}
-        <div className="px-4 pt-2 pb-3">
-          <div className={`flex gap-2 ${shakeInput ? 'animate-shake' : ''}`}>
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && submitAnswer()}
-              placeholder="Type an answer..."
-              autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
-              className="flex-1 px-4 py-3.5 rounded-xl text-base font-semibold outline-none"
-              style={{
-                background: 'var(--surface)',
-                border: '1.5px solid var(--border)',
-                color: 'var(--text)',
-                boxShadow: 'var(--shadow)',
-              }}
-            />
-            <button onClick={submitAnswer}
-              className="px-5 py-3.5 rounded-xl font-black text-sm transition-all active:scale-[0.95]"
-              style={{ background: 'var(--green)', color: '#fff', boxShadow: '0 2px 8px rgba(22,163,74,0.3)' }}>
-              SHOOT
-            </button>
-          </div>
-        </div>
-
-        {/* Answer grid */}
-        <div className="flex-1 overflow-y-auto px-4 pb-6">
-          <div className="grid grid-cols-2 gap-2">
-            {question.answer_display.map((display, i) => {
-              const found = foundIndices.has(i)
-              return (
-                <div key={i}
-                  className={`px-3 py-3 rounded-xl text-sm ${found ? 'animate-pop-in' : ''}`}
-                  style={{
-                    background: found ? 'var(--green-light)' : 'var(--surface)',
-                    border: `1.5px solid ${found ? '#86efac' : 'var(--border)'}`,
-                    boxShadow: found ? '0 1px 8px rgba(22,163,74,0.15)' : 'var(--shadow)',
-                  }}>
-                  <p className="text-xs font-bold mb-0.5"
-                    style={{ color: found ? '#15803d' : 'var(--text-faint)' }}>
-                    #{i + 1}
-                  </p>
-                  <p className="font-bold leading-tight"
-                    style={{ color: found ? 'var(--green)' : 'var(--text-faint)' }}>
-                    {found ? display.split('(')[0].trim() : '???'}
-                  </p>
+            {/* Scoreboard row */}
+            <div className="px-5 pb-3 flex items-end gap-5">
+              <div>
+                <div className="label-micro mb-0.5" style={{ color: 'var(--mint)' }}>Goals</div>
+                <div className="font-display score-big text-5xl tabular" style={{ color: 'var(--mint)', textShadow: '0 0 20px var(--mint-glow)' }}>
+                  {String(goals).padStart(2, '0')}
                 </div>
-              )
-            })}
+              </div>
+              <div className="w-px h-10" style={{ background: 'var(--border)' }} />
+              <div>
+                <div className="label-micro mb-0.5">Shots</div>
+                <div className="font-display score-big text-5xl tabular" style={{ color: 'var(--text)' }}>
+                  {String(shots).padStart(2, '0')}
+                </div>
+              </div>
+              <div className="ml-auto text-right">
+                <div className="label-micro mb-0.5">Target</div>
+                <div className="font-display text-2xl tabular" style={{ color: 'var(--text-muted)' }}>
+                  {goals}<span style={{ color: 'var(--text-faint)' }}>/{total}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="h-1" style={{ background: 'rgba(255,255,255,0.06)' }}>
+              <div className="h-full transition-all duration-500"
+                style={{
+                  width: `${(goals / total) * 100}%`,
+                  background: 'linear-gradient(90deg, var(--mint) 0%, #7dffb8 100%)',
+                  boxShadow: '0 0 10px var(--mint-glow)',
+                }} />
+            </div>
+          </div>
+
+          {/* Question */}
+          <div className="px-4 pt-4 pb-2">
+            <div className="card px-4 py-3">
+              <p className="label-micro mb-1" style={{ color: 'var(--mint)' }}>{question.category}</p>
+              <p className="font-semibold text-sm leading-snug" style={{ color: 'var(--text)' }}>{question.question}</p>
+            </div>
+          </div>
+
+          {/* Input */}
+          <div className="px-4 pt-2 pb-3">
+            <div className={`flex gap-2 ${shakeInput ? 'animate-shake' : ''}`}>
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && submitAnswer()}
+                placeholder="Type an answer..."
+                autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
+                className="flex-1 px-4 py-3.5 rounded-xl text-base font-semibold outline-none"
+                style={{
+                  background: 'var(--surface)',
+                  border: '1.5px solid var(--border)',
+                  color: 'var(--text)',
+                }}
+              />
+              <button onClick={submitAnswer}
+                className="btn-primary px-5 py-3.5 text-sm">
+                SHOOT
+              </button>
+            </div>
+          </div>
+
+          {/* Answer grid */}
+          <div className="flex-1 overflow-y-auto px-4 pb-6">
+            <div className="grid grid-cols-2 gap-2">
+              {question.answer_display.map((display, i) => {
+                const found = foundIndices.has(i)
+                return (
+                  <div key={i}
+                    className={`px-3 py-3 rounded-xl ${found ? 'animate-pop-in' : ''}`}
+                    style={{
+                      background: found ? 'linear-gradient(135deg, rgba(0,255,135,0.15) 0%, rgba(0,255,135,0.05) 100%)' : 'var(--surface)',
+                      border: `1px solid ${found ? 'rgba(0,255,135,0.4)' : 'var(--border)'}`,
+                      boxShadow: found ? '0 0 16px rgba(0,255,135,0.15)' : 'none',
+                    }}>
+                    <p className="label-micro mb-1"
+                      style={{ color: found ? 'var(--mint)' : 'var(--text-faint)' }}>
+                      #{String(i + 1).padStart(2, '0')}
+                    </p>
+                    <p className="font-bold leading-tight text-sm"
+                      style={{ color: found ? 'var(--text)' : 'var(--text-faint)' }}>
+                      {found ? display.split('(')[0].trim() : '———'}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -398,90 +426,120 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
     const myRank = leaderboard.findIndex(p => p.id === player?.id) + 1
     const medals = ['🥇', '🥈', '🥉']
     const suffixes = ['st', 'nd', 'rd']
+    const iWon = myRank === 1
 
     return (
-      <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
-        <header className="px-5 py-4" style={{ background: 'var(--navy)' }}>
-          <div className="flex items-center gap-3">
-            <span className="text-xl">⚽</span>
-            <h1 className="text-white font-black tracking-tight">FOOTY TRIVIA SHOTS</h1>
-          </div>
-        </header>
+      <div className="min-h-screen flex flex-col stadium-bg noise">
+        <div className="relative z-10 flex-1 flex flex-col">
+          <Header status="FULL TIME" />
 
-        <div className="flex-1 p-5 pb-8 space-y-4 max-w-lg mx-auto w-full">
-          {/* My result */}
-          <div className="rounded-2xl p-6 text-center animate-fade-in"
-            style={{
-              background: myRank === 1 ? '#fefce8' : 'var(--surface)',
-              border: `1.5px solid ${myRank === 1 ? '#fde68a' : 'var(--border)'}`,
-              boxShadow: 'var(--shadow-lg)',
-            }}>
-            <div className="text-5xl mb-2">{medals[myRank - 1] || '⚽'}</div>
-            <h2 className="text-xl font-black mb-1" style={{ color: 'var(--navy)' }}>{name}</h2>
-            <div className="text-5xl font-black tabular-nums my-2" style={{ color: myRank === 1 ? 'var(--gold)' : 'var(--green)' }}>
-              {myGoals}
-              <span className="text-lg font-medium ml-1" style={{ color: 'var(--text-faint)' }}>/{total}</span>
-            </div>
-            <p className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>
-              {myRank === 1 ? 'Winner! 🏆' : `${myRank}${suffixes[myRank - 1] || 'th'} place`}
-              {' · '}{shots} shots taken
-            </p>
-          </div>
-
-          {/* Leaderboard */}
-          <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-md)' }}>
-            <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: 'var(--text-faint)' }}>Full Table</p>
-            <div className="space-y-2">
-              {leaderboard.map((p, i) => {
-                const isMe = p.id === player?.id
-                const pct = (p.goals / total) * 100
-                return (
-                  <div key={p.id} className="rounded-xl p-3 animate-slide-up"
+          <div className="flex-1 p-4 pb-8 space-y-4 max-w-lg mx-auto w-full">
+            {/* My result */}
+            <div className="card p-6 text-center animate-fade-in relative overflow-hidden">
+              {iWon && (
+                <div className="absolute inset-0 pointer-events-none" style={{
+                  background: 'radial-gradient(ellipse at top, rgba(255,214,10,0.18) 0%, transparent 60%)',
+                }} />
+              )}
+              <div className="relative">
+                <div className="text-6xl mb-3 animate-pop-in">{medals[myRank - 1] || '⚽'}</div>
+                <p className="label-micro mb-1" style={{ color: iWon ? 'var(--gold)' : 'var(--mint)' }}>
+                  {iWon ? 'MATCH WINNER' : `${myRank}${suffixes[myRank - 1] || 'th'} place`}
+                </p>
+                <h2 className="font-display text-4xl tracking-tight mb-3" style={{ color: 'var(--text)' }}>
+                  {name.toUpperCase()}
+                </h2>
+                <div className="flex items-end justify-center gap-2">
+                  <span className="font-display score-big text-7xl tabular"
                     style={{
-                      background: isMe ? (i === 0 ? '#fefce8' : 'var(--green-light)') : 'var(--surface-2)',
-                      border: `1.5px solid ${isMe ? (i === 0 ? '#fde68a' : '#86efac') : 'var(--border)'}`,
-                      animationDelay: `${i * 80}ms`,
+                      color: iWon ? 'var(--gold)' : 'var(--mint)',
+                      textShadow: iWon ? '0 0 30px rgba(255,214,10,0.5)' : '0 0 30px var(--mint-glow)',
                     }}>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-base w-7">{medals[i] || `${i + 1}`}</span>
-                      <span className="flex-1 font-bold text-sm" style={{ color: isMe ? 'var(--navy)' : 'var(--text)' }}>
-                        {p.name} {isMe && <span className="text-xs font-medium opacity-60">(you)</span>}
-                      </span>
-                      <span className="font-black tabular-nums" style={{ color: i === 0 ? 'var(--gold)' : 'var(--green)' }}>
-                        {p.goals}/{total}
-                      </span>
-                    </div>
-                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                      <div className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%`, background: i === 0 ? 'var(--gold)' : 'var(--green)', transitionDelay: `${i * 80}ms` }} />
-                    </div>
-                  </div>
-                )
-              })}
+                    {myGoals}
+                  </span>
+                  <span className="font-display text-3xl tabular pb-2" style={{ color: 'var(--text-faint)' }}>/{total}</span>
+                </div>
+                <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
+                  {shots} shots taken
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* Answer reveal */}
-          <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}>
-            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: 'var(--text-faint)' }}>The Answers</p>
-            <div className="space-y-1.5">
-              {question.answer_display.map((display, i) => {
-                const found = foundIndices.has(i)
-                return (
-                  <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm"
-                    style={{
-                      background: found ? 'var(--green-light)' : '#fff5f5',
-                      border: `1px solid ${found ? '#86efac' : '#fecaca'}`,
-                      color: found ? 'var(--green)' : 'var(--red)',
-                    }}>
-                    <span className="font-bold text-xs w-4 text-center opacity-60">{i + 1}</span>
-                    <span className="flex-1 font-medium">{display}</span>
-                    {found
-                      ? <span className="text-xs font-black" style={{ color: 'var(--green)' }}>GOAL ⚽</span>
-                      : <span className="text-xs font-bold opacity-50">MISSED</span>}
-                  </div>
-                )
-              })}
+            {/* Leaderboard */}
+            <div className="card p-5">
+              <div className="flex items-center gap-3 mb-4 pb-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+                <span className="label-micro">Full Table</span>
+              </div>
+              <div className="space-y-2">
+                {leaderboard.map((p, i) => {
+                  const isMe = p.id === player?.id
+                  const pct = (p.goals / total) * 100
+                  const isFirst = i === 0
+                  return (
+                    <div key={p.id} className="rounded-xl p-3 animate-slide-up"
+                      style={{
+                        background: isFirst ? 'linear-gradient(135deg, rgba(255,214,10,0.12) 0%, rgba(255,214,10,0.03) 100%)' : 'var(--surface-2)',
+                        border: `1px solid ${isFirst ? 'rgba(255,214,10,0.35)' : isMe ? 'rgba(0,255,135,0.3)' : 'var(--border)'}`,
+                        animationDelay: `${i * 80}ms`,
+                        boxShadow: isFirst ? '0 0 20px rgba(255,214,10,0.1)' : 'none',
+                      }}>
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="font-display text-xl w-7 tabular text-center" style={{ color: isFirst ? 'var(--gold)' : 'var(--text-muted)' }}>
+                          {medals[i] || String(i + 1).padStart(2, '0')}
+                        </span>
+                        <span className="flex-1 font-bold text-sm" style={{ color: 'var(--text)' }}>
+                          {p.name}
+                          {isMe && <span className="ml-1.5 label-micro" style={{ color: 'var(--mint)' }}>YOU</span>}
+                        </span>
+                        <span className="font-display text-2xl tabular" style={{ color: isFirst ? 'var(--gold)' : 'var(--mint)' }}>
+                          {p.goals}
+                          <span className="text-sm ml-0.5" style={{ color: 'var(--text-faint)' }}>/{total}</span>
+                        </span>
+                      </div>
+                      <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{
+                            width: `${pct}%`,
+                            background: isFirst ? 'linear-gradient(90deg, var(--gold) 0%, #ffed4e 100%)' : 'linear-gradient(90deg, var(--mint) 0%, #7dffb8 100%)',
+                            transitionDelay: `${i * 80 + 100}ms`,
+                          }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Answer reveal */}
+            <div className="card p-5">
+              <div className="flex items-center gap-3 mb-4 pb-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+                <span className="label-micro">The Answers</span>
+              </div>
+              <div className="space-y-1.5">
+                {question.answer_display.map((display, i) => {
+                  const found = foundIndices.has(i)
+                  return (
+                    <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm"
+                      style={{
+                        background: found ? 'rgba(0,255,135,0.08)' : 'var(--surface-2)',
+                        border: `1px solid ${found ? 'rgba(0,255,135,0.25)' : 'var(--border)'}`,
+                      }}>
+                      <span className="font-display text-base w-6 text-center tabular"
+                        style={{ color: found ? 'var(--mint)' : 'var(--text-faint)' }}>
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <span className="flex-1 font-semibold" style={{ color: found ? 'var(--text)' : 'var(--text-muted)' }}>
+                        {display}
+                      </span>
+                      {found
+                        ? <span className="label-micro" style={{ color: 'var(--mint)' }}>⚽ GOAL</span>
+                        : <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -490,8 +548,11 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-base font-semibold" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+    <div className="flex items-center justify-center min-h-screen stadium-bg noise">
+      <div className="relative z-10 flex flex-col items-center gap-4">
+        <div className="text-4xl animate-spin-slow">⚽</div>
+        <div className="label-micro">Loading...</div>
+      </div>
     </div>
   )
 }

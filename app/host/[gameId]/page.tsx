@@ -4,6 +4,40 @@ import { use, useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, type Game, type GamePlayer, type Question, type PlayerAnswer } from '@/lib/supabase'
 
+function Header({ status }: { status?: 'host' | 'live' | 'fulltime' }) {
+  return (
+    <header className="px-5 pt-5 pb-4 flex items-center gap-3 relative z-10">
+      <div className="flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm"
+          style={{ background: 'var(--mint)', color: 'var(--text-dark)' }}>⚽</div>
+        <div className="leading-none">
+          <h1 className="font-display text-xl tracking-wide">FOOTY TRIVIA <span style={{ color: 'var(--mint)' }}>SHOTS</span></h1>
+          <p className="text-[10px] italic mt-0.5" style={{ color: 'var(--text-faint)' }}>When you shoot, score!</p>
+        </div>
+      </div>
+      {status === 'host' && (
+        <span className="ml-auto text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full"
+          style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+          HOST
+        </span>
+      )}
+      {status === 'live' && (
+        <div className="ml-auto flex items-center gap-2 px-3 py-1 rounded-full animate-pulse-glow"
+          style={{ background: 'rgba(255,45,85,0.15)', border: '1px solid rgba(255,45,85,0.4)' }}>
+          <div className="live-dot" />
+          <span className="text-[11px] font-black tracking-wider" style={{ color: 'var(--red)' }}>LIVE</span>
+        </div>
+      )}
+      {status === 'fulltime' && (
+        <span className="ml-auto text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full"
+          style={{ background: 'var(--gold)', color: 'var(--text-dark)' }}>
+          FULL TIME
+        </span>
+      )}
+    </header>
+  )
+}
+
 export default function HostPage({ params }: { params: Promise<{ gameId: string }> }) {
   const { gameId } = use(params)
   const router = useRouter()
@@ -108,7 +142,6 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Build per-player goal count from allAnswers
   const playerGoals = allAnswers.reduce<Record<string, Set<number>>>((acc, a) => {
     if (a.matched_index !== null) {
       if (!acc[a.player_id]) acc[a.player_id] = new Set()
@@ -122,66 +155,60 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
   )
 
   if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-lg font-bold" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+    <div className="flex items-center justify-center min-h-screen stadium-bg noise">
+      <div className="font-display text-2xl" style={{ color: 'var(--mint)' }}>LOADING</div>
     </div>
   )
   if (!game) return null
 
   const timerPct = game.ends_at ? timeLeft / game.round_duration : 1
-  const timerColor = timerPct > 0.5 ? 'var(--green)' : timerPct > 0.25 ? 'var(--gold)' : 'var(--red)'
-  const r = 40
-  const circ = 2 * Math.PI * r
+  const timerColor = timerPct > 0.5 ? 'var(--mint)' : timerPct > 0.25 ? 'var(--gold)' : 'var(--red)'
 
   // ── LOBBY ───────────────────────────────────────────────────
   if (game.status === 'lobby') return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
-      <header className="px-5 py-4 flex items-center gap-3" style={{ background: 'var(--navy)' }}>
-        <span className="text-xl">⚽</span>
-        <h1 className="text-white font-black tracking-tight">FOOTY TRIVIA SHOTS</h1>
-        <span className="ml-auto text-xs px-2.5 py-1 rounded-full font-bold"
-          style={{ background: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)' }}>
-          HOST
-        </span>
-      </header>
-
-      <div className="flex-1 p-5 pb-8 max-w-lg mx-auto w-full space-y-4">
-        {/* Room code */}
-        <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-md)' }}>
-          <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-faint)' }}>Room Code</p>
-          <div className="text-5xl font-black tracking-[0.18em] mb-4" style={{ color: 'var(--navy)', fontVariantNumeric: 'tabular-nums' }}>
+    <div className="min-h-screen stadium-bg noise flex flex-col relative">
+      <Header status="host" />
+      <div className="flex-1 px-5 pb-10 max-w-xl mx-auto w-full space-y-4 relative z-10">
+        {/* Room code - scoreboard style */}
+        <div className="card p-6 text-center">
+          <p className="label-micro mb-3">Room Code</p>
+          <div className="font-display score-big text-[72px] tracking-[0.15em] mb-5" style={{
+            background: 'linear-gradient(180deg, #fff 0%, #aaa 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+            textShadow: '0 0 40px rgba(0,255,135,0.2)',
+          }}>
             {game.code}
           </div>
           <button onClick={copyLink}
-            className="w-full py-3 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
-            style={{
-              background: copied ? 'var(--green)' : 'var(--navy)',
-              color: '#fff',
-            }}>
-            {copied ? '✓ Link copied!' : `Share: /play/${game.code}`}
+            className={copied ? 'btn-primary w-full py-3.5 text-sm' : 'btn-ghost w-full py-3.5 text-sm font-bold'}>
+            {copied ? '✓ LINK COPIED' : `SHARE /play/${game.code}`}
           </button>
         </div>
 
-        {/* Players */}
-        <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Squad</p>
-            <span className="text-sm font-bold px-2.5 py-0.5 rounded-full"
-              style={{ background: players.length > 0 ? 'var(--green-light)' : '#f3f4f6', color: players.length > 0 ? 'var(--green)' : 'var(--text-faint)' }}>
-              {players.length} joined
-            </span>
+        {/* Squad */}
+        <div className="card p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+            <span className="label-micro flex-1">The Squad</span>
+            <span className="font-display text-lg tabular" style={{ color: 'var(--mint)' }}>{players.length}</span>
           </div>
           {players.length === 0 ? (
-            <div className="py-6 text-center">
-              <div className="text-3xl mb-2">📱</div>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Waiting for the squad to join...</p>
+            <div className="py-8 text-center">
+              <div className="text-3xl mb-2 opacity-30">📱</div>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Waiting for the squad to join...</p>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
               {players.map(p => (
                 <span key={p.id}
-                  className="px-3 py-1.5 rounded-full text-sm font-semibold animate-slide-up"
-                  style={{ background: 'var(--green-light)', color: 'var(--green)' }}>
+                  className="px-3 py-1.5 rounded-lg text-sm font-semibold animate-slide-up"
+                  style={{
+                    background: 'var(--surface-3)',
+                    border: '1px solid var(--border-strong)',
+                    color: 'var(--text)',
+                  }}>
                   {p.name}
                 </span>
               ))}
@@ -190,44 +217,46 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
         </div>
 
         {/* Question picker */}
-        <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}>
-          <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: 'var(--text-faint)' }}>Pick a Question</p>
+        <div className="card p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+            <span className="label-micro">Choose the Question</span>
+          </div>
           <div className="space-y-2">
             {questions.map(q => {
               const selected = selectedQuestion?.id === q.id
               return (
                 <button key={q.id} onClick={() => pickQuestion(q)}
-                  className="w-full text-left p-4 rounded-xl transition-all active:scale-[0.99]"
+                  className="w-full text-left p-4 rounded-xl transition-all active:scale-[0.99] relative overflow-hidden"
                   style={{
-                    background: selected ? 'var(--green-light)' : 'var(--surface-2)',
-                    border: `1.5px solid ${selected ? 'var(--green)' : 'var(--border)'}`,
+                    background: selected ? 'linear-gradient(135deg, rgba(0,255,135,0.12) 0%, rgba(0,255,135,0.04) 100%)' : 'var(--surface-2)',
+                    border: `1px solid ${selected ? 'var(--mint)' : 'var(--border)'}`,
                   }}>
-                  <span className="text-xs font-bold uppercase tracking-wider block mb-0.5"
-                    style={{ color: selected ? 'var(--green)' : 'var(--text-faint)' }}>
-                    {q.category}
-                  </span>
-                  <span className="text-sm font-semibold" style={{ color: selected ? 'var(--navy)' : 'var(--text)' }}>
-                    {q.question}
-                  </span>
+                  {selected && <div className="absolute top-0 right-0 w-20 h-20 rounded-full blur-2xl" style={{ background: 'var(--mint-glow)' }} />}
+                  <div className="relative flex items-start gap-3">
+                    <div className="font-display text-base tabular w-8" style={{ color: selected ? 'var(--mint)' : 'var(--text-faint)' }}>
+                      {String(questions.indexOf(q) + 1).padStart(2, '0')}
+                    </div>
+                    <div className="flex-1">
+                      <p className="label-micro mb-1" style={{ color: selected ? 'var(--mint)' : undefined }}>{q.category}</p>
+                      <p className="text-sm font-semibold leading-snug">{q.question}</p>
+                    </div>
+                    {selected && <div className="text-lg" style={{ color: 'var(--mint)' }}>✓</div>}
+                  </div>
                 </button>
               )
             })}
           </div>
         </div>
 
-        {/* Go live */}
+        {/* Kick off */}
         <button onClick={goLive}
           disabled={!selectedQuestion || players.length === 0}
-          className="w-full py-5 rounded-2xl text-xl font-black transition-all active:scale-[0.98] disabled:opacity-40"
-          style={{ background: 'var(--green)', color: '#fff', boxShadow: selectedQuestion && players.length > 0 ? '0 4px 20px rgba(22,163,74,0.35)' : 'none' }}>
-          KICK OFF
+          className="btn-primary w-full py-5 font-display text-2xl tracking-wider">
+          KICK OFF ⚽
         </button>
-        {!selectedQuestion && (
-          <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>Pick a question first</p>
-        )}
-        {selectedQuestion && players.length === 0 && (
-          <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>Waiting for at least 1 player</p>
-        )}
+        {!selectedQuestion && <p className="text-center text-xs" style={{ color: 'var(--text-muted)' }}>Pick a question first</p>}
+        {selectedQuestion && players.length === 0 && <p className="text-center text-xs" style={{ color: 'var(--text-muted)' }}>Need at least 1 player in the squad</p>}
       </div>
     </div>
   )
@@ -236,80 +265,78 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
   if (game.status === 'active') {
     const foundIndices = new Set(allAnswers.map(a => a.matched_index))
     return (
-      <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
-        <header className="px-5 py-3 flex items-center gap-3" style={{ background: 'var(--navy)' }}>
-          <span className="text-xl">⚽</span>
-          <h1 className="text-white font-black tracking-tight flex-1">FOOTY TRIVIA SHOTS</h1>
-          <span className="text-xs font-bold px-2.5 py-1 rounded-full animate-pulse"
-            style={{ background: 'rgba(220,38,38,0.25)', color: '#fca5a5' }}>
-            LIVE
-          </span>
-        </header>
-
-        <div className="flex-1 p-5 pb-8 max-w-lg mx-auto w-full space-y-4">
-          {/* Timer + question */}
-          <div className="rounded-2xl p-5 flex gap-4 items-center" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-md)' }}>
-            <div className="relative shrink-0 w-20 h-20">
-              <svg className="w-20 h-20 -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r={r} fill="none" stroke="var(--border)" strokeWidth="8" />
-                <circle cx="50" cy="50" r={r} fill="none"
-                  stroke={timerColor} strokeWidth="8" strokeLinecap="round"
-                  strokeDasharray={circ}
-                  strokeDashoffset={circ * (1 - timerPct)}
-                  style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.5s' }}
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-lg font-black tabular-nums" style={{ color: timerColor }}>
+      <div className="min-h-screen stadium-bg noise flex flex-col relative">
+        <Header status="live" />
+        <div className="flex-1 px-5 pb-10 max-w-xl mx-auto w-full space-y-4 relative z-10">
+          {/* Scoreboard timer + question */}
+          <div className="card p-5">
+            <div className="flex items-center gap-4">
+              <div className="text-center shrink-0">
+                <p className="label-micro mb-1">Time</p>
+                <div className="font-display score-big text-5xl tabular" style={{ color: timerColor, textShadow: `0 0 20px ${timerColor}` }}>
                   {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
-                </span>
+                </div>
+              </div>
+              <div className="w-px self-stretch" style={{ background: 'var(--border)' }} />
+              <div className="flex-1 min-w-0">
+                <p className="label-micro mb-1">{selectedQuestion?.category}</p>
+                <p className="font-bold text-sm leading-snug">{selectedQuestion?.question}</p>
               </div>
             </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-faint)' }}>{selectedQuestion?.category}</p>
-              <p className="font-semibold text-sm leading-snug">{selectedQuestion?.question}</p>
+            {/* Progress */}
+            <div className="mt-4 h-1 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+              <div className="h-full transition-all duration-1000 ease-linear"
+                style={{ width: `${timerPct * 100}%`, background: timerColor, boxShadow: `0 0 10px ${timerColor}` }} />
             </div>
           </div>
 
           {/* Answers grid */}
-          <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Answers</p>
-              <span className="text-sm font-bold" style={{ color: 'var(--green)' }}>{foundIndices.size}/{selectedQuestion?.answers.length} found</span>
+          <div className="card p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+              <span className="label-micro flex-1">Goals Scored</span>
+              <span className="font-display text-lg tabular" style={{ color: 'var(--mint)' }}>
+                {foundIndices.size}<span style={{ color: 'var(--text-faint)' }}>/{selectedQuestion?.answers.length}</span>
+              </span>
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 gap-2">
               {selectedQuestion?.answer_display.map((display, i) => {
                 const found = foundIndices.has(i)
                 return (
-                  <div key={i} className="px-3 py-2.5 rounded-lg text-xs font-medium"
+                  <div key={i} className={`px-3 py-2.5 rounded-lg text-xs ${found ? 'animate-pop-in' : ''}`}
                     style={{
-                      background: found ? 'var(--green-light)' : 'var(--surface-2)',
-                      border: `1px solid ${found ? 'var(--green)' : 'var(--border)'}`,
-                      color: found ? 'var(--green)' : 'var(--text-faint)',
+                      background: found ? 'linear-gradient(135deg, rgba(0,255,135,0.14) 0%, rgba(0,255,135,0.04) 100%)' : 'var(--surface-2)',
+                      border: `1px solid ${found ? 'rgba(0,255,135,0.4)' : 'var(--border)'}`,
+                      color: found ? 'var(--mint)' : 'var(--text-faint)',
                     }}>
-                    <span className="font-bold">{i + 1}. </span>
-                    {found ? display.split('(')[0].trim() : '???'}
+                    <span className="font-display tabular text-sm mr-1">{i + 1}.</span>
+                    <span className="font-semibold">{found ? display.split('(')[0].trim() : '???'}</span>
                   </div>
                 )
               })}
             </div>
           </div>
 
-          {/* Live leaderboard */}
-          <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}>
-            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: 'var(--text-faint)' }}>Live Table</p>
-            <div className="space-y-2">
+          {/* Live table */}
+          <div className="card p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+              <span className="label-micro">Live Table</span>
+            </div>
+            <div className="space-y-1.5">
               {sortedPlayers.map((p, i) => {
                 const goals = playerGoals[p.id]?.size || 0
                 return (
-                  <div key={p.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                    <span className="text-base w-7 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}</span>
+                  <div key={p.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg"
+                    style={{ background: i === 0 && goals > 0 ? 'linear-gradient(90deg, rgba(255,214,10,0.1) 0%, var(--surface-2) 100%)' : 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <span className="font-display tabular text-sm w-6 text-center"
+                      style={{ color: i === 0 && goals > 0 ? 'var(--gold)' : 'var(--text-muted)' }}>
+                      {i + 1}
+                    </span>
                     <span className="flex-1 font-semibold text-sm">{p.name}</span>
-                    <div className="text-right">
-                      <span className="font-black text-lg tabular-nums" style={{ color: 'var(--green)' }}>{goals}</span>
-                      <span className="text-xs ml-0.5" style={{ color: 'var(--text-faint)' }}>goals</span>
-                    </div>
+                    <span className="font-display tabular text-2xl" style={{ color: i === 0 && goals > 0 ? 'var(--gold)' : 'var(--mint)' }}>
+                      {goals}
+                    </span>
                   </div>
                 )
               })}
@@ -317,9 +344,9 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
           </div>
 
           <button onClick={endRound}
-            className="w-full py-3.5 rounded-xl font-bold transition-all active:scale-[0.98]"
-            style={{ background: 'var(--surface)', border: '1.5px solid var(--red)', color: 'var(--red)', boxShadow: 'var(--shadow)' }}>
-            Blow the Whistle
+            className="btn-ghost w-full py-3.5 text-sm font-bold"
+            style={{ color: 'var(--red)', borderColor: 'rgba(255,45,85,0.3)' }}>
+            BLOW THE WHISTLE
           </button>
         </div>
       </div>
@@ -329,44 +356,48 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
   // ── FINISHED ────────────────────────────────────────────────
   const medals = ['🥇', '🥈', '🥉']
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
-      <header className="px-5 py-4" style={{ background: 'var(--navy)' }}>
-        <div className="flex items-center gap-3">
-          <span className="text-xl">⚽</span>
-          <h1 className="text-white font-black tracking-tight">FOOTY TRIVIA SHOTS</h1>
-        </div>
-      </header>
-
-      <div className="flex-1 p-5 pb-8 max-w-lg mx-auto w-full space-y-4">
+    <div className="min-h-screen stadium-bg noise flex flex-col relative">
+      <Header status="fulltime" />
+      <div className="flex-1 px-5 pb-10 max-w-xl mx-auto w-full space-y-4 relative z-10">
         <div className="text-center py-6">
           <div className="text-5xl mb-3">🏆</div>
-          <h2 className="text-2xl font-black" style={{ color: 'var(--navy)' }}>Full Time</h2>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{selectedQuestion?.question}</p>
+          <h2 className="font-display text-5xl tracking-tight" style={{ color: 'var(--text)' }}>FULL TIME</h2>
+          <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>{selectedQuestion?.question}</p>
         </div>
 
         {/* Final table */}
-        <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-lg)' }}>
-          <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: 'var(--text-faint)' }}>Final Table</p>
+        <div className="card p-5">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-1 h-5 rounded-full" style={{ background: 'var(--gold)' }} />
+            <span className="label-micro">Final Table</span>
+          </div>
           <div className="space-y-2">
             {sortedPlayers.map((p, i) => {
               const goals = playerGoals[p.id]?.size || 0
               const pct = selectedQuestion ? (goals / selectedQuestion.answers.length) * 100 : 0
               return (
-                <div key={p.id} className="rounded-xl p-4 animate-slide-up"
+                <div key={p.id} className="rounded-xl p-4 animate-slide-up relative overflow-hidden"
                   style={{
-                    background: i === 0 ? '#fefce8' : 'var(--surface-2)',
-                    border: `1.5px solid ${i === 0 ? '#fde68a' : 'var(--border)'}`,
+                    background: i === 0 ? 'linear-gradient(135deg, rgba(255,214,10,0.12) 0%, rgba(255,214,10,0.03) 100%)' : 'var(--surface-2)',
+                    border: `1px solid ${i === 0 ? 'rgba(255,214,10,0.4)' : 'var(--border)'}`,
                     animationDelay: `${i * 80}ms`
                   }}>
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-xl w-8">{medals[i] || `${i + 1}`}</span>
+                  {i === 0 && <div className="absolute -top-4 -right-4 w-24 h-24 rounded-full blur-3xl" style={{ background: 'rgba(255,214,10,0.3)' }} />}
+                  <div className="relative flex items-center gap-3 mb-2">
+                    <span className="text-2xl w-8">{medals[i] || ''}</span>
+                    {!medals[i] && <span className="font-display text-xl tabular w-8" style={{ color: 'var(--text-faint)' }}>{i + 1}</span>}
                     <span className="flex-1 font-bold">{p.name}</span>
-                    <span className="font-black text-xl tabular-nums" style={{ color: i === 0 ? 'var(--gold)' : 'var(--green)' }}>
-                      {goals}<span className="text-sm font-medium ml-0.5" style={{ color: 'var(--text-faint)' }}>/{selectedQuestion?.answers.length}</span>
-                    </span>
+                    <div className="text-right">
+                      <span className="font-display score-big text-4xl tabular" style={{ color: i === 0 ? 'var(--gold)' : 'var(--mint)' }}>
+                        {goals}
+                      </span>
+                      <span className="font-display text-lg ml-1 tabular" style={{ color: 'var(--text-faint)' }}>
+                        /{selectedQuestion?.answers.length}
+                      </span>
+                    </div>
                   </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: i === 0 ? 'var(--gold)' : 'var(--green)' }} />
+                  <div className="relative h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: i === 0 ? 'var(--gold)' : 'var(--mint)' }} />
                   </div>
                 </div>
               )
@@ -375,21 +406,23 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
         </div>
 
         {/* Answer reveal */}
-        <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}>
-          <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: 'var(--text-faint)' }}>The Answers</p>
+        <div className="card p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+            <span className="label-micro">The Answers</span>
+          </div>
           <div className="space-y-1.5">
             {selectedQuestion?.answer_display.map((display, i) => {
               const found = allAnswers.some(a => a.matched_index === i)
               return (
                 <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm"
                   style={{
-                    background: found ? 'var(--green-light)' : '#fff5f5',
-                    border: `1px solid ${found ? '#86efac' : '#fecaca'}`,
-                    color: found ? 'var(--green)' : 'var(--red)',
+                    background: found ? 'rgba(0,255,135,0.06)' : 'rgba(255,45,85,0.04)',
+                    border: `1px solid ${found ? 'rgba(0,255,135,0.2)' : 'rgba(255,45,85,0.15)'}`,
                   }}>
-                  <span className="font-bold w-5 text-xs text-center" style={{ opacity: 0.7 }}>{i + 1}</span>
-                  <span className="flex-1">{display}</span>
-                  {!found && <span className="text-xs font-bold opacity-60">MISSED</span>}
+                  <span className="font-display tabular text-sm w-6" style={{ color: 'var(--text-muted)' }}>{i + 1}</span>
+                  <span className="flex-1 font-medium" style={{ color: found ? 'var(--mint)' : 'var(--text-muted)' }}>{display}</span>
+                  {!found && <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--red)' }}>MISSED</span>}
                 </div>
               )
             })}
@@ -397,9 +430,8 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
         </div>
 
         <button onClick={() => router.push('/')}
-          className="w-full py-4 rounded-xl font-black text-lg transition-all active:scale-[0.98]"
-          style={{ background: 'var(--navy)', color: '#fff' }}>
-          New Game
+          className="btn-primary w-full py-4 font-display text-xl tracking-wider">
+          NEW MATCH ⚽
         </button>
       </div>
     </div>
