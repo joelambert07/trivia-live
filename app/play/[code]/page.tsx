@@ -93,6 +93,9 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
     setAllPlayers((players as GamePlayer[]) || [])
   }, [])
 
+  // Broadcast-based realtime (postgres_changes is broken on this Supabase project).
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+
   useEffect(() => {
     const gameId = game?.id
     if (!gameId) return
@@ -111,21 +114,50 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
       }
     }
 
+    const refetchGame = async () => {
+      const { data } = await supabase.from('games').select('*').eq('id', gameId).single()
+      if (data) applyGame(data as Game)
+    }
+
     const ch = supabase
-      .channel(`play-${gameId}-${player?.id ?? 'anon'}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
-        payload => applyGame(payload.new as Game))
-      .subscribe(async status => {
+      .channel(`game:${gameId}`, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'game-changed' }, () => { refetchGame() })
+      .subscribe(status => {
         if (status === 'SUBSCRIBED') {
-          // Refetch in case host already flipped status before subscription was ready
-          const { data } = await supabase.from('games').select('*').eq('id', gameId).single()
-          if (data) applyGame(data as Game)
+          refetchGame()
+          // Announce our presence so the host refreshes the squad list
+          if (player?.id) {
+            ch.send({ type: 'broadcast', event: 'player-joined', payload: { playerId: player.id } })
+          }
         }
       })
+    channelRef.current = ch
 
-    return () => { supabase.removeChannel(ch) }
+    return () => { supabase.removeChannel(ch); channelRef.current = null }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.id, player?.id])
+
+  // Poll game status every 3s as a safety net — cheap insurance if broadcast misses
+  useEffect(() => {
+    const gameId = game?.id
+    if (!gameId || phase === 'finished') return
+    const t = setInterval(async () => {
+      const { data } = await supabase.from('games').select('*').eq('id', gameId).single()
+      if (!data) return
+      const updated = data as Game
+      setGame(updated)
+      if (updated.status === 'active' && phase === 'waiting') {
+        setPhase('playing')
+        if (updated.question_id) loadQuestion(updated.question_id)
+        setTimeout(() => inputRef.current?.focus(), 300)
+      }
+      if (updated.status === 'finished' && phase !== 'finished') {
+        setPhase('finished')
+        loadAllData(updated.id)
+      }
+    }, 3000)
+    return () => clearInterval(t)
+  }, [game?.id, phase, loadQuestion, loadAllData])
 
   useEffect(() => {
     if (phase === 'finished' && game) loadAllData(game.id)
@@ -188,6 +220,10 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
       is_correct: correct,
       matched_index: correct ? index : null,
     })
+
+    if (correct) {
+      channelRef.current?.send({ type: 'broadcast', event: 'answer-scored', payload: { playerId: player.id } })
+    }
 
     submitting.current = false
   }

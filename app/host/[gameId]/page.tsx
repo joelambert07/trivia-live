@@ -82,22 +82,19 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
 
   useEffect(() => { loadPlayers() }, [loadPlayers])
 
-  // Stable single subscription — only re-runs if gameId changes.
-  // Refetches state on SUBSCRIBED to close any race windows between initial load and subscription.
   const refetchGame = useCallback(async () => {
     const { data } = await supabase.from('games').select('*').eq('id', gameId).single()
     if (data) setGame(data as Game)
   }, [gameId])
 
+  // Broadcast-based realtime (postgres_changes is broken on this Supabase project
+  // due to a realtime.list_changes signature bug — broadcast bypasses the WAL).
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   useEffect(() => {
     const ch = supabase
-      .channel(`host-${gameId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
-        payload => setGame(payload.new as Game))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'game_players', filter: `game_id=eq.${gameId}` },
-        () => loadPlayers())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'player_answers', filter: `game_id=eq.${gameId}` },
-        () => { loadPlayers(); loadAnswers() })
+      .channel(`game:${gameId}`, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'player-joined' }, () => { loadPlayers() })
+      .on('broadcast', { event: 'answer-scored' }, () => { loadPlayers(); loadAnswers() })
       .subscribe(status => {
         if (status === 'SUBSCRIBED') {
           refetchGame()
@@ -105,8 +102,18 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
           loadAnswers()
         }
       })
-    return () => { supabase.removeChannel(ch) }
+    channelRef.current = ch
+    return () => { supabase.removeChannel(ch); channelRef.current = null }
   }, [gameId, loadPlayers, loadAnswers, refetchGame])
+
+  // Poll as a safety net (every 3s) — cheap insurance against any missed broadcasts
+  useEffect(() => {
+    const t = setInterval(() => {
+      loadPlayers()
+      if (game?.status === 'active') loadAnswers()
+    }, 3000)
+    return () => clearInterval(t)
+  }, [loadPlayers, loadAnswers, game?.status])
 
   useEffect(() => {
     if (game?.status === 'active') loadAnswers()
@@ -130,21 +137,29 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
     await supabase.from('games').update({ question_id: q.id }).eq('id', gameId)
   }
 
+  async function broadcastGameChanged() {
+    await channelRef.current?.send({ type: 'broadcast', event: 'game-changed', payload: {} })
+  }
+
   async function goLive() {
     if (!selectedQuestion) return
     const duration = 180
-    await supabase.from('games').update({
+    const { data } = await supabase.from('games').update({
       status: 'active',
       question_id: selectedQuestion.id,
       started_at: new Date().toISOString(),
       ends_at: new Date(Date.now() + duration * 1000).toISOString(),
       round_duration: duration,
-    }).eq('id', gameId)
+    }).eq('id', gameId).select().single()
+    if (data) setGame(data as Game)
+    await broadcastGameChanged()
   }
 
   async function endRound() {
     if (game?.status === 'finished') return
-    await supabase.from('games').update({ status: 'finished' }).eq('id', gameId)
+    const { data } = await supabase.from('games').update({ status: 'finished' }).eq('id', gameId).select().single()
+    if (data) setGame(data as Game)
+    await broadcastGameChanged()
   }
 
   function copyLink() {
