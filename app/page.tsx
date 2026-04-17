@@ -13,100 +13,73 @@ export default function Home() {
     setLoading(true)
     setError('')
 
-    // Generate a unique 6-char code
     let code = generateCode()
-    let attempts = 0
-    while (attempts < 5) {
-      const { data: existing } = await supabase
-        .from('games')
-        .select('id')
-        .eq('code', code)
-        .maybeSingle()
+    for (let i = 0; i < 5; i++) {
+      const { data: existing } = await supabase.from('games').select('id').eq('code', code).maybeSingle()
       if (!existing) break
       code = generateCode()
-      attempts++
     }
 
-    const { data, error: err } = await supabase
-      .from('games')
-      .insert({ code })
-      .select()
-      .single()
-
-    if (err || !data) {
-      setError('Failed to create game. Try again.')
-      setLoading(false)
-      return
-    }
-
+    const { data, error: err } = await supabase.from('games').insert({ code }).select().single()
+    if (err || !data) { setError('Failed to create game. Try again.'); setLoading(false); return }
     router.push(`/host/${data.id}`)
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-4">
-      <div className="text-center max-w-md w-full">
-        <div className="text-6xl mb-4">⚽</div>
-        <h1 className="text-4xl font-black tracking-tight mb-2" style={{ color: 'var(--accent)' }}>
-          TRIVIA LIVE
-        </h1>
-        <p className="text-lg mb-2" style={{ color: 'rgba(240,240,255,0.6)' }}>
-          Football Top 10s — live with your mates
-        </p>
-        <p className="text-sm mb-10" style={{ color: 'rgba(240,240,255,0.35)' }}>
-          Inspired by HQ Trivia &amp; Tenable
-        </p>
+    <div className="min-h-screen flex flex-col">
+      {/* Header */}
+      <header className="px-5 py-4 flex items-center gap-3" style={{ background: 'var(--navy)' }}>
+        <span className="text-2xl">⚽</span>
+        <div>
+          <h1 className="text-white font-black text-lg leading-none tracking-tight">FOOTY TRIVIA SHOTS</h1>
+          <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>Top 10s • Live • With The Shots</p>
+        </div>
+      </header>
 
-        <div
-          className="rounded-2xl p-8 mb-6"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <h2 className="text-xl font-bold mb-2">Host a Game</h2>
-          <p className="text-sm mb-6" style={{ color: 'rgba(240,240,255,0.5)' }}>
-            Create a room, share the link, and when everyone&apos;s in — go live.
-            Your mates have 3 minutes to name as many correct answers as possible.
+      <div className="flex-1 flex flex-col justify-center px-5 py-8 max-w-lg mx-auto w-full">
+        {/* Hero */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-5 text-4xl"
+            style={{ background: 'var(--green-light)' }}>
+            ⚽
+          </div>
+          <h2 className="text-3xl font-black tracking-tight mb-2" style={{ color: 'var(--navy)' }}>
+            Host a Match
+          </h2>
+          <p style={{ color: 'var(--text-muted)' }}>
+            Football Top 10s — everyone guesses live on their phone
           </p>
+        </div>
+
+        {/* Create card */}
+        <div className="rounded-2xl p-6 mb-4" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-lg)' }}>
           <button
             onClick={createGame}
             disabled={loading}
-            className="w-full py-4 rounded-xl text-lg font-bold transition-all active:scale-95 disabled:opacity-50"
-            style={{
-              background: loading ? 'var(--accent-dim)' : 'var(--accent)',
-              color: '#0d0d1a',
-            }}
+            className="w-full py-4 rounded-xl text-lg font-black transition-all active:scale-[0.98] disabled:opacity-60"
+            style={{ background: loading ? 'var(--green)' : 'var(--navy)', color: '#fff' }}
           >
-            {loading ? 'Creating...' : 'Create Game'}
+            {loading ? 'Setting up...' : 'Create Game'}
           </button>
-          {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
+          {error && <p className="text-center text-sm mt-3" style={{ color: 'var(--red)' }}>{error}</p>}
         </div>
 
-        <div
-          className="rounded-2xl p-6 text-left"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <h3 className="font-bold mb-3 text-sm uppercase tracking-widest" style={{ color: 'rgba(240,240,255,0.4)' }}>
-            How it works
-          </h3>
-          <div className="space-y-2 text-sm" style={{ color: 'rgba(240,240,255,0.6)' }}>
-            <div className="flex gap-3">
-              <span style={{ color: 'var(--accent)' }}>1.</span>
-              <span>Create a game and share the join link with your group</span>
-            </div>
-            <div className="flex gap-3">
-              <span style={{ color: 'var(--accent)' }}>2.</span>
-              <span>Everyone joins on their phone and enters their name</span>
-            </div>
-            <div className="flex gap-3">
-              <span style={{ color: 'var(--accent)' }}>3.</span>
-              <span>Pick a question and hit Go Live — 3 minutes on the clock</span>
-            </div>
-            <div className="flex gap-3">
-              <span style={{ color: 'var(--accent)' }}>4.</span>
-              <span>Type your answers — correct ones light up instantly</span>
-            </div>
-            <div className="flex gap-3">
-              <span style={{ color: 'var(--accent)' }}>5.</span>
-              <span>Scores revealed when the clock hits zero</span>
-            </div>
+        {/* How it works */}
+        <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}>
+          <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: 'var(--text-faint)' }}>How it works</p>
+          <div className="space-y-3">
+            {[
+              ['⚽', 'Create a game, share the link with The Shots'],
+              ['📱', 'Everyone joins on their phone — enter your name'],
+              ['🚀', 'Pick a question and go live — 3 minutes on the clock'],
+              ['🎯', 'Type answers — goals light up, shots are counted'],
+              ['🏆', 'Most goals wins when the whistle blows'],
+            ].map(([icon, text]) => (
+              <div key={text} className="flex items-start gap-3">
+                <span className="text-lg shrink-0 mt-0.5">{icon}</span>
+                <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{text}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
