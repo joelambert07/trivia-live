@@ -151,7 +151,7 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
         if (updated.question_id) loadQuestion(updated.question_id)
         setTimeout(() => inputRef.current?.focus(), 300)
       }
-      if (updated.status === 'finished' && phase !== 'finished') {
+      if (updated.status === 'finished') {
         setPhase('finished')
         loadAllData(updated.id)
       }
