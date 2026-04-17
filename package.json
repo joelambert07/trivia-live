@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "gen-questions": "node --env-file=.env.local --experimental-strip-types scripts/generate-questions.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",
