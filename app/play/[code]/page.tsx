@@ -94,30 +94,38 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   }, [])
 
   useEffect(() => {
-    if (!game) return
-    if (game.question_id) loadQuestion(game.question_id)
+    const gameId = game?.id
+    if (!gameId) return
+    if (game?.question_id) loadQuestion(game.question_id)
+
+    const applyGame = (updated: Game) => {
+      setGame(updated)
+      if (updated.question_id) loadQuestion(updated.question_id)
+      if (updated.status === 'active') {
+        setPhase(prev => (prev === 'finished' ? prev : 'playing'))
+        setTimeout(() => inputRef.current?.focus(), 300)
+      }
+      if (updated.status === 'finished') {
+        setPhase('finished')
+        loadAllData(updated.id)
+      }
+    }
 
     const ch = supabase
-      .channel(`play-${game.id}-${player?.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${game.id}` },
-        async payload => {
-          const updated = payload.new as Game
-          setGame(updated)
-          if (updated.question_id) loadQuestion(updated.question_id)
-          if (updated.status === 'active') {
-            setPhase('playing')
-            setTimeout(() => inputRef.current?.focus(), 300)
-          }
-          if (updated.status === 'finished') {
-            setPhase('finished')
-            await loadAllData(updated.id)
-          }
-        })
-      .subscribe()
+      .channel(`play-${gameId}-${player?.id ?? 'anon'}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
+        payload => applyGame(payload.new as Game))
+      .subscribe(async status => {
+        if (status === 'SUBSCRIBED') {
+          // Refetch in case host already flipped status before subscription was ready
+          const { data } = await supabase.from('games').select('*').eq('id', gameId).single()
+          if (data) applyGame(data as Game)
+        }
+      })
 
     return () => { supabase.removeChannel(ch) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game?.id])
+  }, [game?.id, player?.id])
 
   useEffect(() => {
     if (phase === 'finished' && game) loadAllData(game.id)

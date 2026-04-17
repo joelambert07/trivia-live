@@ -82,8 +82,14 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
 
   useEffect(() => { loadPlayers() }, [loadPlayers])
 
+  // Stable single subscription — only re-runs if gameId changes.
+  // Refetches state on SUBSCRIBED to close any race windows between initial load and subscription.
+  const refetchGame = useCallback(async () => {
+    const { data } = await supabase.from('games').select('*').eq('id', gameId).single()
+    if (data) setGame(data as Game)
+  }, [gameId])
+
   useEffect(() => {
-    if (!game) return
     const ch = supabase
       .channel(`host-${gameId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
@@ -92,9 +98,15 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
         () => loadPlayers())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'player_answers', filter: `game_id=eq.${gameId}` },
         () => { loadPlayers(); loadAnswers() })
-      .subscribe()
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          refetchGame()
+          loadPlayers()
+          loadAnswers()
+        }
+      })
     return () => { supabase.removeChannel(ch) }
-  }, [game, gameId, loadPlayers, loadAnswers])
+  }, [gameId, loadPlayers, loadAnswers, refetchGame])
 
   useEffect(() => {
     if (game?.status === 'active') loadAnswers()
