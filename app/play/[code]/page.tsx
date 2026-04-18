@@ -115,18 +115,19 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   }, [])
 
   // ── game state applier ────────────────────────────────────────────────────
-  const applyGame = useCallback((updated: Game, myPlayerId?: string) => {
-    setGame(prev => {
-      // If round changed, reset per-round state
-      if (prev && updated.current_round !== prev.current_round) {
-        setMyAnswers([])
-        setShots(0)
-      }
-      return updated
-    })
+  const gameRef = useRef<Game | null>(null)
+  const applyGame = useCallback((updated: Game) => {
+    // Check round change BEFORE updating game state (no setState-in-setState)
+    const prev = gameRef.current
+    if (prev && updated.current_round !== prev.current_round) {
+      setMyAnswers([])
+      setShots(0)
+    }
+    gameRef.current = updated
+    setGame(updated)
     if (updated.question_id) loadQuestion(updated.question_id)
     if (updated.status === 'active') {
-      setPhase(prev => (prev === 'finished' ? prev : 'playing'))
+      setPhase('playing')
       setTimeout(() => inputRef.current?.focus(), 300)
     }
     if (updated.status === 'between_rounds') {
@@ -147,7 +148,7 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
 
     const refetchGame = async () => {
       const { data } = await supabase.from('games').select('*').eq('id', gameId).single()
-      if (data) applyGame(data as Game, player?.id)
+      if (data) applyGame(data as Game)
     }
 
     const ch = supabase
@@ -177,14 +178,15 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.id, player?.id])
 
-  // 3s polling safety net
+  // Polling safety net — faster during between_rounds so round transitions are snappy
   useEffect(() => {
     const gameId = game?.id
     if (!gameId || phase === 'finished') return
+    const interval = phase === 'between_rounds' ? 1000 : 3000
     const t = setInterval(async () => {
       const { data } = await supabase.from('games').select('*').eq('id', gameId).single()
-      if (data) applyGame(data as Game, player?.id)
-    }, 3000)
+      if (data) applyGame(data as Game)
+    }, interval)
     return () => clearInterval(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.id, phase, player?.id])
@@ -222,7 +224,10 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
       const left = Math.max(0, Math.ceil((new Date(game.ends_at!).getTime() - Date.now()) / 1000))
       setTimeLeft(left)
       if (left <= 0 && game?.id) {
-        setPhase(prev => (prev === 'finished' ? prev : 'finished'))
+        // For multi-round games, use between_rounds so the applyGame guard
+        // doesn't block the transition to playing when round 2 kicks off
+        const isLastRound = (game.current_round || 1) >= (game.total_rounds || 1)
+        setPhase(prev => (prev === 'finished' ? prev : isLastRound ? 'finished' : 'between_rounds'))
         loadAllData(game.id)
       }
     }
@@ -347,7 +352,8 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   )
 
   // ── PLAYING ───────────────────────────────────────────────────────────────
-  if (phase === 'playing' && question) {
+  // Guard: only render when the correct question for this round has loaded
+  if (phase === 'playing' && question && question.id === game?.question_id) {
     const goals = myAnswers.length
     const total = Math.min(question.answers.length, 10) // cap at 10 even if more answers exist
     const foundIndices = new Set(myAnswers.map(a => a.matched_index))
