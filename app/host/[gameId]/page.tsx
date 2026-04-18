@@ -698,6 +698,62 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
             </div>
           </div>
 
+          {/* Answer reveal for completed round */}
+          {completedQ && (
+            <div className="card p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+                <div className="flex-1">
+                  <span className="label-micro block">Round {completedRound} Answers</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{completedQ.question}</span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {(() => {
+                  const isOpenList = completedQ.answer_display.length > 10
+                  const scorerMap: Record<number, string[]> = {}
+                  for (const a of roundAnswers) {
+                    if (a.matched_index !== null) {
+                      if (!scorerMap[a.matched_index]) scorerMap[a.matched_index] = []
+                      if (!scorerMap[a.matched_index].includes(a.player_id)) scorerMap[a.matched_index].push(a.player_id)
+                    }
+                  }
+                  return completedQ.answer_display.map((display, i) => {
+                    const scorerIds = scorerMap[i] || []
+                    const anyScored = scorerIds.length > 0
+                    return (
+                      <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
+                        style={{
+                          background: anyScored ? 'rgba(0,255,135,0.06)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'rgba(255,45,85,0.04)',
+                          border: `1px solid ${anyScored ? 'rgba(0,255,135,0.2)' : isOpenList ? 'rgba(255,255,255,0.07)' : 'rgba(255,45,85,0.15)'}`,
+                        }}>
+                        <span className="font-display tabular text-sm w-6 shrink-0" style={{ color: 'var(--text-muted)' }}>{i + 1}</span>
+                        <span className="flex-1 font-medium min-w-0 truncate" style={{ color: anyScored ? 'var(--mint)' : 'var(--text-muted)' }}>{display}</span>
+                        <div className="flex items-center gap-1 flex-wrap justify-end shrink-0">
+                          {anyScored ? (
+                            scorerIds.map(pid => {
+                              const pName = players.find(p => p.id === pid)?.name || '?'
+                              return (
+                                <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                                  style={{ background: 'rgba(0,255,135,0.12)', color: 'var(--mint)', border: '1px solid rgba(0,255,135,0.25)' }}>
+                                  ⚽ {pName}
+                                </span>
+                              )
+                            })
+                          ) : isOpenList ? (
+                            <span className="text-[10px] font-semibold" style={{ color: 'var(--text-faint)' }}>also valid</span>
+                          ) : (
+                            <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--red)' }}>MISSED</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     )

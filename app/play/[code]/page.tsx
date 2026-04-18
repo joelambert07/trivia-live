@@ -258,12 +258,8 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
       setGoalFlash(true)
       setTimeout(() => setGoalFlash(false), 900)
     } else if (ambiguousIndices && ambiguousIndices.length > 1) {
-      // Multiple answers matched — tell the player to be more specific
-      const names = ambiguousIndices.slice(0, 3).map(i =>
-        (question.answer_display[i] ?? question.answers[i]).split('(')[0].trim()
-      )
-      const nameList = names.length === 2 ? `${names[0]} or ${names[1]}` : names.join(', ')
-      setAmbiguousHint(`Which one — ${nameList}?`)
+      // Multiple answers matched — prompt to be more specific without revealing the names
+      setAmbiguousHint(`More than one "${raw.trim()}" — try a full name`)
       setShakeInput(true)
       setTimeout(() => setShakeInput(false), 400)
     } else {
