@@ -770,6 +770,16 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
                   </span>
                   <span className="font-display text-3xl tabular pb-2" style={{ color: 'var(--text-faint)' }}>/{maxGoals}</span>
                 </div>
+                {totalRounds > 1 && (
+                  <div className="flex justify-center gap-2 mt-2 flex-wrap">
+                    {overallGoalSets[player?.id ?? '']?.map((set, ri) => (
+                      <span key={ri} className="text-[10px] px-2 py-0.5 rounded-full tabular"
+                        style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        R{ri + 1}: {set.size}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>{myTotalShots} shots taken</p>
               </div>
             </div>
@@ -814,6 +824,12 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
                                 style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.08)' }}>
                                 🎯 {s} shot{s===1?'':'s'}
                               </span>
+                              {totalRounds > 1 && overallGoalSets[p.id]?.map((set, ri) => (
+                                <span key={ri} className="text-[10px] px-1.5 py-0.5 rounded tabular"
+                                  style={{ background: 'rgba(0,255,135,0.08)', color: 'var(--mint)', border: '1px solid rgba(0,255,135,0.15)' }}>
+                                  R{ri + 1}: {set.size}
+                                </span>
+                              ))}
                               {showTime && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded tabular"
                                   style={{ background: 'rgba(0,255,135,0.1)', color: 'var(--mint)', border: '1px solid rgba(0,255,135,0.2)' }}>

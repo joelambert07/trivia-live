@@ -57,9 +57,9 @@ function buildOverallStats(
   allShots: PlayerAnswer[],
   players: GamePlayer[],
   totalRounds: number,
-): Record<string, { goals: number; lastGoalMs: number; shots: number }> {
-  const stats: Record<string, { goals: number; lastGoalMs: number; shots: number }> = {}
-  for (const p of players) stats[p.id] = { goals: 0, lastGoalMs: Infinity, shots: 0 }
+): Record<string, { goals: number; roundGoals: number[]; lastGoalMs: number; shots: number }> {
+  const stats: Record<string, { goals: number; roundGoals: number[]; lastGoalMs: number; shots: number }> = {}
+  for (const p of players) stats[p.id] = { goals: 0, roundGoals: Array(totalRounds).fill(0), lastGoalMs: Infinity, shots: 0 }
   for (let r = 1; r <= totalRounds; r++) {
     const rAnswers = allAnswers.filter(a => a.round_number === r)
     const rShots = allShots.filter(a => a.round_number === r)
@@ -75,7 +75,10 @@ function buildOverallStats(
       }
     }
     for (const [pid, gs] of Object.entries(goalSets)) {
-      if (stats[pid]) stats[pid].goals += gs.size
+      if (stats[pid]) {
+        stats[pid].goals += gs.size
+        stats[pid].roundGoals[r - 1] = gs.size
+      }
     }
     for (const s of rShots) {
       if (stats[s.player_id]) stats[s.player_id].shots++
@@ -756,6 +759,12 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
                             style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.08)' }}>
                             🎯 {shots} shot{shots === 1 ? '' : 's'}
                           </span>
+                          {totalRounds > 1 && stat?.roundGoals?.map((rg, ri) => (
+                            <span key={ri} className="text-[10px] px-1.5 py-0.5 rounded tabular"
+                              style={{ background: 'rgba(0,255,135,0.08)', color: 'var(--mint)', border: '1px solid rgba(0,255,135,0.15)' }}>
+                              R{ri + 1}: {rg}
+                            </span>
+                          ))}
                           {showTime && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded tabular"
                               style={{ background: 'rgba(0,255,135,0.1)', color: 'var(--mint)', border: '1px solid rgba(0,255,135,0.2)' }}>
