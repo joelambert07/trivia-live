@@ -138,7 +138,7 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
   const [timeLeft, setTimeLeft] = useState(0)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
-  const [expandedCats, setExpandedCats] = useState<Record<number, Set<string>>>({}) // roundIndex → open category names
+  const [expandedGroups, setExpandedGroups] = useState<Record<number, Set<string>>>({}) // roundIndex → open group names
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const roundEndedRef = useRef(false) // use ref not state to avoid stale-closure issues in timer
   const gameRef = useRef<Game | null>(null) // always-fresh game snapshot for the timer
@@ -443,36 +443,45 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
               )}
               <div className="space-y-1">
                 {(() => {
+                  const GROUPS: Record<string, string[]> = {
+                    '🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League': ['Arsenal', 'Chelsea', 'Everton', 'Liverpool', 'Man City', 'Man United', 'Newcastle', 'Tottenham', 'Premier League', 'EFL Cup', 'FA Cup', 'Hat-tricks', 'Crossovers'],
+                    '🌍 International': ['England', 'International', 'Euros', 'World Cup', 'Copa America', 'Africa'],
+                    '🏆 European Cups': ['Champions League', 'Europa League'],
+                    '⚽ European Clubs & Leagues': ['Barcelona', 'Real Madrid', 'Bundesliga', 'La Liga', 'Serie A', 'Copa del Rey'],
+                    '🏅 Awards & Transfers': ['Awards', "Ballon d'Or", 'Transfers'],
+                  }
+                  // Ensure categories added via DB but not in GROUPS still appear
+                  const allGroupedCats = new Set(Object.values(GROUPS).flat())
+                  const ungroupedCats = [...new Set(questions.map(q => q.category))].filter(c => !allGroupedCats.has(c))
+                  if (ungroupedCats.length > 0) GROUPS['📋 Other'] = ungroupedCats
                   const available = questions.filter(q => !roundQIds.some((id, idx) => id === q.id && idx !== ri))
-                  const byCategory = available.reduce<Record<string, Question[]>>((acc, q) => {
-                    ;(acc[q.category] = acc[q.category] || []).push(q)
-                    return acc
-                  }, {})
-                  const openCats = expandedCats[ri] ?? new Set<string>()
-                  return Object.entries(byCategory).map(([cat, qs]) => {
-                    const isOpen = openCats.has(cat)
-                    const hasSel = qs.some(q => q.id === pickedId)
+                  const openGroups = expandedGroups[ri] ?? new Set<string>()
+                  return Object.entries(GROUPS).map(([groupName, cats]) => {
+                    const groupQs = available.filter(q => cats.includes(q.category))
+                    if (groupQs.length === 0) return null
+                    const isOpen = openGroups.has(groupName)
+                    const hasSel = groupQs.some(q => q.id === pickedId)
                     return (
-                      <div key={cat}>
+                      <div key={groupName}>
                         <button
                           onClick={() => {
-                            const next = new Set(openCats)
-                            isOpen ? next.delete(cat) : next.add(cat)
-                            setExpandedCats(prev => ({ ...prev, [ri]: next }))
+                            const next = new Set(openGroups)
+                            isOpen ? next.delete(groupName) : next.add(groupName)
+                            setExpandedGroups(prev => ({ ...prev, [ri]: next }))
                           }}
                           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all"
                           style={{ background: hasSel ? 'rgba(0,255,135,0.06)' : 'var(--surface-2)', border: `1px solid ${hasSel ? 'rgba(0,255,135,0.2)' : 'var(--border)'}` }}>
                           <span className="label-micro flex-1 text-left"
                             style={{ color: hasSel ? 'var(--mint)' : 'var(--text-muted)' }}>
-                            {cat}
+                            {groupName}
                             {hasSel && ' ✓'}
                           </span>
-                          <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{qs.length}</span>
+                          <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{groupQs.length}</span>
                           <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{isOpen ? '▲' : '▼'}</span>
                         </button>
                         {isOpen && (
                           <div className="mt-1 ml-2 space-y-1 mb-2">
-                            {qs.map(q => {
+                            {groupQs.map(q => {
                               const sel = pickedId === q.id
                               return (
                                 <button key={q.id} onClick={() => pickQuestion(ri, q)}
@@ -481,9 +490,12 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
                                     background: sel ? 'rgba(0,255,135,0.12)' : 'var(--surface)',
                                     border: `1px solid ${sel ? 'var(--mint)' : 'var(--border)'}`,
                                   }}>
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-xs font-semibold leading-snug flex-1">{q.question}</p>
-                                    {sel && <span className="text-[10px] font-bold shrink-0" style={{ color: 'var(--mint)' }}>✓</span>}
+                                  <div className="flex items-start gap-2">
+                                    <div className="flex-1 min-w-0">
+                                      <span className="label-micro block mb-0.5" style={{ color: 'var(--text-faint)' }}>{q.category}</span>
+                                      <p className="text-xs font-semibold leading-snug">{q.question}</p>
+                                    </div>
+                                    {sel && <span className="text-[10px] font-bold shrink-0 mt-0.5" style={{ color: 'var(--mint)' }}>✓</span>}
                                   </div>
                                 </button>
                               )
@@ -709,7 +721,11 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
           </div>
           <div className="space-y-2">
             {(() => {
-              const maxAnswers = totalRounds * 10
+              // Use actual answer count per round, capped at 10
+              const maxAnswers = roundQIds.slice(0, totalRounds).reduce((sum, qId) => {
+                const q = questions.find(q => q.id === qId)
+                return sum + Math.min(q?.answers?.length ?? 10, 10)
+              }, 0)
               const gameStartMs = game.started_at ? new Date(game.started_at).getTime() : 0
               return overallSorted.map((p, i) => {
                 const stat = overallStats[p.id]
@@ -779,20 +795,28 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
                 </div>
               </div>
               <div className="space-y-1.5">
-                {rq.answer_display.map((display, i) => {
-                  const found = foundSet.has(i)
-                  return (
-                    <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm"
-                      style={{
-                        background: found ? 'rgba(0,255,135,0.06)' : 'rgba(255,45,85,0.04)',
-                        border: `1px solid ${found ? 'rgba(0,255,135,0.2)' : 'rgba(255,45,85,0.15)'}`,
-                      }}>
-                      <span className="font-display tabular text-sm w-6" style={{ color: 'var(--text-muted)' }}>{i + 1}</span>
-                      <span className="flex-1 font-medium" style={{ color: found ? 'var(--mint)' : 'var(--text-muted)' }}>{display}</span>
-                      {!found && <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--red)' }}>MISSED</span>}
-                    </div>
-                  )
-                })}
+                {(() => {
+                  const isOpenList = rq.answer_display.length > 10
+                  return rq.answer_display.map((display, i) => {
+                    const found = foundSet.has(i)
+                    return (
+                      <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm"
+                        style={{
+                          background: found ? 'rgba(0,255,135,0.06)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'rgba(255,45,85,0.04)',
+                          border: `1px solid ${found ? 'rgba(0,255,135,0.2)' : isOpenList ? 'rgba(255,255,255,0.07)' : 'rgba(255,45,85,0.15)'}`,
+                        }}>
+                        <span className="font-display tabular text-sm w-6" style={{ color: 'var(--text-muted)' }}>{i + 1}</span>
+                        <span className="flex-1 font-medium" style={{ color: found ? 'var(--mint)' : 'var(--text-muted)' }}>{display}</span>
+                        {found
+                          ? null
+                          : isOpenList
+                            ? <span className="text-[10px] font-semibold tracking-wider" style={{ color: 'var(--text-faint)' }}>also valid</span>
+                            : <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--red)' }}>MISSED</span>
+                        }
+                      </div>
+                    )
+                  })
+                })()}
               </div>
             </div>
           )

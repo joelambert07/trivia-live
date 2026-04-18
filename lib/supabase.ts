@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder'
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
@@ -50,6 +50,26 @@ export interface PlayerAnswer {
   round_number: number
 }
 
+/**
+ * Expand common football shorthand before comparison.
+ * Applied to both the player input AND the stored answers so lookups are symmetric.
+ */
+function expandAbbr(s: string): string {
+  return s
+    .replace(/\bman city\b/g, 'manchester city')
+    .replace(/\bman utd\b/g, 'manchester united')
+    .replace(/\bman united\b/g, 'manchester united')
+    .replace(/\bman u\b/g, 'manchester united')
+    .replace(/\bspurs\b/g, 'tottenham')
+    .replace(/\bwolves\b/g, 'wolverhampton')
+    .replace(/\bwba\b/g, 'west brom')
+    .replace(/\bbarca\b/g, 'barcelona')
+    .replace(/\bpsgs?\b/g, 'paris saint germain')
+    .replace(/\bpsg\b/g, 'paris saint germain')
+    .replace(/\batleti\b/g, 'atletico madrid')
+    .replace(/\batm\b/g, 'atletico madrid')
+}
+
 /** Strip diacritics (Müller → Muller), lowercase, collapse whitespace */
 export function normalizeAnswer(input: string): string {
   return input
@@ -88,42 +108,61 @@ function levenshtein(a: string, b: string): number {
  *   3. Initials — "ddg" matches "David De Gea", "rvp" matches "Robin van Persie"
  *   4. Fuzzy — 1 edit distance for inputs ≥ 5 chars (Alison → Alisson, Szcesny → Szczesny)
  */
-export function checkAnswer(input: string, answers: string[]): { correct: boolean; index: number } {
-  const normalized = normalizeAnswer(input)
+export function checkAnswer(input: string, answers: string[]): { correct: boolean; index: number; ambiguousIndices?: number[] } {
+  // Apply abbreviation expansion THEN standard normalisation to both sides
+  const normalized = expandAbbr(normalizeAnswer(input))
   if (!normalized || normalized.length < 2) return { correct: false, index: -1 }
 
-  for (let i = 0; i < answers.length; i++) {
-    const target = normalizeAnswer(answers[i])
-    const targetWords = target.split(' ')
+  const normTargets = answers.map(a => expandAbbr(normalizeAnswer(a)))
 
-    // 1. Exact match
-    if (normalized === target) return { correct: true, index: i }
+  // 1. Exact match — always unambiguous, return immediately
+  for (let i = 0; i < normTargets.length; i++) {
+    if (normalized === normTargets[i]) return { correct: true, index: i }
+  }
 
-    // 2. Word-subset match (all input words must appear in target)
-    if (normalized.length >= 3) {
-      const inputWords = normalized.split(' ')
+  // 2. Word-subset match — collect ALL matches; only accept if exactly one answer matches.
+  //    If multiple match, return ambiguousIndices so the UI can prompt "Which one?"
+  if (normalized.length >= 3) {
+    const inputWords = normalized.split(' ')
+    const subsetMatches: number[] = []
+    for (let i = 0; i < normTargets.length; i++) {
+      const targetWords = normTargets[i].split(' ')
       const allMatch = inputWords.every(w =>
         targetWords.some(tw => tw === w || (w.length >= 4 && tw.startsWith(w)))
       )
-      if (allMatch) return { correct: true, index: i }
+      if (allMatch) subsetMatches.push(i)
     }
+    if (subsetMatches.length === 1) return { correct: true, index: subsetMatches[0] }
+    if (subsetMatches.length > 1) return { correct: false, index: -1, ambiguousIndices: subsetMatches }
+  }
 
-    // 3. Initials match (e.g. "ddg" → "david de gea", "rvp" → "robin van persie")
-    if (normalized.length >= 2 && !normalized.includes(' ')) {
+  // 3. Initials match — collect all, only accept if unique
+  if (normalized.length >= 2 && !normalized.includes(' ')) {
+    const initialsMatches: number[] = []
+    for (let i = 0; i < normTargets.length; i++) {
+      const targetWords = normTargets[i].split(' ')
       const initials = targetWords.map(w => w[0]).join('')
-      if (normalized === initials) return { correct: true, index: i }
+      if (normalized === initials) initialsMatches.push(i)
     }
+    if (initialsMatches.length === 1) return { correct: true, index: initialsMatches[0] }
+    if (initialsMatches.length > 1) return { correct: false, index: -1, ambiguousIndices: initialsMatches }
+  }
 
-    // 4. Fuzzy match — 1 edit distance against full target or any long individual word
-    if (normalized.length >= 5) {
-      if (levenshtein(normalized, target) <= 1) return { correct: true, index: i }
+  // 4. Fuzzy match — collect all, only accept if unique
+  if (normalized.length >= 5) {
+    const fuzzyMatches: number[] = []
+    for (let i = 0; i < normTargets.length; i++) {
+      const target = normTargets[i]
+      const targetWords = target.split(' ')
+      if (levenshtein(normalized, target) <= 1) { fuzzyMatches.push(i); continue }
       for (const tw of targetWords) {
-        if (tw.length >= 5 && levenshtein(normalized, tw) <= 1) {
-          return { correct: true, index: i }
-        }
+        if (tw.length >= 5 && levenshtein(normalized, tw) <= 1) { fuzzyMatches.push(i); break }
       }
     }
+    if (fuzzyMatches.length === 1) return { correct: true, index: fuzzyMatches[0] }
+    if (fuzzyMatches.length > 1) return { correct: false, index: -1, ambiguousIndices: fuzzyMatches }
   }
+
   return { correct: false, index: -1 }
 }
 

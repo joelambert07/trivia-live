@@ -56,6 +56,8 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   const [shakeInput, setShakeInput] = useState(false)
   const [shots, setShots] = useState(0)   // current round shots
   const [joining, setJoining] = useState(false)
+  const [maxGoalsTotal, setMaxGoalsTotal] = useState<number | null>(null)
+  const [ambiguousHint, setAmbiguousHint] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const submitting = useRef(false)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -196,6 +198,20 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, game?.current_round])
 
+  // When the game finishes, compute the true max goals using actual question answer counts
+  useEffect(() => {
+    if (phase !== 'finished' || !game) return
+    const qIds = (game.round_question_ids || []).filter(Boolean).slice(0, game.total_rounds || 1)
+    if (qIds.length === 0) return
+    supabase.from('questions').select('id, answers').in('id', qIds).then(({ data }) => {
+      if (!data) return
+      const countMap: Record<string, number> = {}
+      for (const q of data as { id: string; answers: unknown[] }[]) countMap[q.id] = q.answers.length
+      setMaxGoalsTotal(qIds.reduce((sum, id) => sum + Math.min(countMap[id] ?? 10, 10), 0))
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
+
   // ── timer ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!game?.ends_at || game.status !== 'active') return
@@ -224,7 +240,7 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
     if (myAnswers.some(a => a.answer_normalized === normalized)) {
       submitting.current = false; return
     }
-    const { correct, index } = checkAnswer(raw, question.answers)
+    const { correct, index, ambiguousIndices } = checkAnswer(raw, question.answers)
     if (correct && myAnswers.some(a => a.matched_index === index)) {
       submitting.current = false; return
     }
@@ -238,9 +254,20 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
       setMyAnswers(prev => [...prev, optimistic])
       // Self-broadcasts are off, so manually add our own answer to the all-answers counts
       setAllCorrectAnswers(prev => [...prev, optimistic])
+      setAmbiguousHint('')
       setGoalFlash(true)
       setTimeout(() => setGoalFlash(false), 900)
+    } else if (ambiguousIndices && ambiguousIndices.length > 1) {
+      // Multiple answers matched — tell the player to be more specific
+      const names = ambiguousIndices.slice(0, 3).map(i =>
+        (question.answer_display[i] ?? question.answers[i]).split('(')[0].trim()
+      )
+      const nameList = names.length === 2 ? `${names[0]} or ${names[1]}` : names.join(', ')
+      setAmbiguousHint(`Which one — ${nameList}?`)
+      setShakeInput(true)
+      setTimeout(() => setShakeInput(false), 400)
     } else {
+      setAmbiguousHint('')
       setShakeInput(true)
       setTimeout(() => setShakeInput(false), 400)
     }
@@ -323,7 +350,7 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   // ── PLAYING ───────────────────────────────────────────────────────────────
   if (phase === 'playing' && question) {
     const goals = myAnswers.length
-    const total = question.answers.length
+    const total = Math.min(question.answers.length, 10) // cap at 10 even if more answers exist
     const foundIndices = new Set(myAnswers.map(a => a.matched_index))
     const timerPct = game?.ends_at ? timeLeft / (game.round_duration || 180) : 1
     const timerColor = timerPct > 0.5 ? 'var(--mint)' : timerPct > 0.25 ? 'var(--gold)' : 'var(--red)'
@@ -367,14 +394,14 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
           <div className="px-3 pb-3">
             <div className={`flex gap-2 ${shakeInput ? 'animate-shake' : ''}`}>
               <input ref={inputRef} type="text" value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
+                onChange={e => { setInputValue(e.target.value); if (ambiguousHint) setAmbiguousHint('') }}
                 onKeyDown={e => e.key === 'Enter' && submitAnswer()}
                 placeholder="Type a name and hit SHOOT…"
                 autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
                 className="flex-1 px-4 py-3.5 rounded-xl text-base font-semibold outline-none"
                 style={{
                   background: 'rgba(255,255,255,0.08)',
-                  border: '1.5px solid rgba(255,255,255,0.15)',
+                  border: `1.5px solid ${ambiguousHint ? 'rgba(255,214,10,0.5)' : 'rgba(255,255,255,0.15)'}`,
                   color: 'var(--text)',
                 }} />
               <button onClick={submitAnswer}
@@ -382,59 +409,104 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
                 SHOOT
               </button>
             </div>
+            {ambiguousHint && (
+              <p className="text-xs font-semibold mt-1.5 px-1 animate-fade-in" style={{ color: 'var(--gold)' }}>
+                🤔 {ambiguousHint}
+              </p>
+            )}
           </div>
         </div>
 
         {/* ── Answer list — fills remaining space, scrollable if needed ── */}
         <div className="flex-1 min-h-0 overflow-y-auto relative z-10 px-3 pt-2 pb-1">
           <div className="space-y-1.5">
-            {question.answer_display.map((display, i) => {
-              const found = foundIndices.has(i)
-              // Extract the stat from parentheses e.g. "Lionel Messi (672 goals)" → "672 goals"
-              const stat = display.match(/\(([^)]+)\)/)?.[1] ?? ''
-              return (
-                <div key={i}
-                  className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl ${found ? 'animate-pop-in' : ''}`}
-                  style={{
-                    background: found
-                      ? 'linear-gradient(135deg, rgba(0,255,135,0.15) 0%, rgba(0,255,135,0.04) 100%)'
-                      : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${found ? 'rgba(0,255,135,0.35)' : 'rgba(255,255,255,0.06)'}`,
-                    boxShadow: found ? '0 0 20px rgba(0,255,135,0.1)' : 'none',
-                  }}>
-                  {/* Position badge */}
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                    style={{
-                      background: found ? 'rgba(0,255,135,0.25)' : 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${found ? 'rgba(0,255,135,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                    }}>
-                    <span className="font-display text-xs tabular leading-none"
-                      style={{ color: found ? 'var(--mint)' : 'rgba(255,255,255,0.3)' }}>
-                      {i + 1}
-                    </span>
-                  </div>
-
-                  {/* Name or placeholder */}
-                  {found ? (
-                    <span className="flex-1 font-bold text-sm leading-tight" style={{ color: 'var(--text)' }}>
-                      {display.split('(')[0].trim()}
-                    </span>
-                  ) : (
-                    <div className="flex-1 flex items-center">
-                      <div className="h-px rounded-full" style={{ width: '60%', background: 'rgba(255,255,255,0.08)' }} />
+            {(() => {
+              const isOpenList = question.answers.length > 10
+              if (isOpenList) {
+                // Open list: 10 generic slots filled in order of discovery
+                return Array.from({ length: 10 }, (_, i) => {
+                  const answered = myAnswers[i]
+                  const filled = !!answered
+                  const displayName = filled
+                    ? (question.answer_display[answered.matched_index!] ?? answered.answer_raw).split('(')[0].trim()
+                    : null
+                  return (
+                    <div key={i}
+                      className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl ${filled ? 'animate-pop-in' : ''}`}
+                      style={{
+                        background: filled
+                          ? 'linear-gradient(135deg, rgba(0,255,135,0.15) 0%, rgba(0,255,135,0.04) 100%)'
+                          : 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${filled ? 'rgba(0,255,135,0.35)' : 'rgba(255,255,255,0.06)'}`,
+                        boxShadow: filled ? '0 0 20px rgba(0,255,135,0.1)' : 'none',
+                      }}>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                        style={{
+                          background: filled ? 'rgba(0,255,135,0.25)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${filled ? 'rgba(0,255,135,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                        }}>
+                        <span className="font-display text-xs tabular leading-none"
+                          style={{ color: filled ? 'var(--mint)' : 'rgba(255,255,255,0.3)' }}>
+                          {i + 1}
+                        </span>
+                      </div>
+                      {filled ? (
+                        <span className="flex-1 font-bold text-sm leading-tight" style={{ color: 'var(--text)' }}>
+                          {displayName}
+                        </span>
+                      ) : (
+                        <div className="flex-1 flex items-center">
+                          <div className="h-px rounded-full" style={{ width: '60%', background: 'rgba(255,255,255,0.08)' }} />
+                        </div>
+                      )}
                     </div>
-                  )}
-
-                  {/* Stat badge — shows e.g. "672 goals", "260 goals", "5 titles" */}
-                  {found && stat && (
-                    <span className="text-[10px] font-semibold tabular px-2 py-1 rounded-lg shrink-0"
-                      style={{ background: 'rgba(0,255,135,0.12)', border: '1px solid rgba(0,255,135,0.2)', color: 'var(--mint)' }}>
-                      {stat}
-                    </span>
-                  )}
-                </div>
-              )
-            })}
+                  )
+                })
+              } else {
+                // Closed list: position-specific slots
+                return question.answer_display.map((display, i) => {
+                  const found = foundIndices.has(i)
+                  const stat = display.match(/\(([^)]+)\)/)?.[1] ?? ''
+                  return (
+                    <div key={i}
+                      className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl ${found ? 'animate-pop-in' : ''}`}
+                      style={{
+                        background: found
+                          ? 'linear-gradient(135deg, rgba(0,255,135,0.15) 0%, rgba(0,255,135,0.04) 100%)'
+                          : 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${found ? 'rgba(0,255,135,0.35)' : 'rgba(255,255,255,0.06)'}`,
+                        boxShadow: found ? '0 0 20px rgba(0,255,135,0.1)' : 'none',
+                      }}>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                        style={{
+                          background: found ? 'rgba(0,255,135,0.25)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${found ? 'rgba(0,255,135,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                        }}>
+                        <span className="font-display text-xs tabular leading-none"
+                          style={{ color: found ? 'var(--mint)' : 'rgba(255,255,255,0.3)' }}>
+                          {i + 1}
+                        </span>
+                      </div>
+                      {found ? (
+                        <span className="flex-1 font-bold text-sm leading-tight" style={{ color: 'var(--text)' }}>
+                          {display.split('(')[0].trim()}
+                        </span>
+                      ) : (
+                        <div className="flex-1 flex items-center">
+                          <div className="h-px rounded-full" style={{ width: '60%', background: 'rgba(255,255,255,0.08)' }} />
+                        </div>
+                      )}
+                      {found && stat && (
+                        <span className="text-[10px] font-semibold tabular px-2 py-1 rounded-lg shrink-0"
+                          style={{ background: 'rgba(0,255,135,0.12)', border: '1px solid rgba(0,255,135,0.2)', color: 'var(--mint)' }}>
+                          {stat}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })
+              }
+            })()}
           </div>
         </div>
 
@@ -490,6 +562,11 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
     const totalRounds = game?.total_rounds || 1
     const roundAnswers = allGameAnswers.filter(a => a.round_number === completedRound)
     const roundShots = allGameShots.filter(a => a.round_number === completedRound)
+    // My answers for the completed round (for answer reveal)
+    const myCompletedAnswers = myAnswers.length > 0
+      ? myAnswers
+      : allGameAnswers.filter(a => a.player_id === player?.id && a.round_number === completedRound)
+    const myCompletedFoundIndices = new Set(myCompletedAnswers.map(a => a.matched_index))
 
     const goalSets: Record<string, Set<number>> = {}
     const shotCounts: Record<string, number> = {}
@@ -573,6 +650,42 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
               <p className="font-semibold text-sm" style={{ color: 'var(--text)' }}>Round {completedRound + 1} coming up…</p>
               <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Waiting for the host to kick off</p>
             </div>
+
+            {/* Answer reveal for completed round */}
+            {question && (
+              <div className="card p-5">
+                <div className="flex items-center gap-3 mb-4 pb-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                  <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+                  <span className="label-micro">Round {completedRound} Answers</span>
+                </div>
+                <div className="space-y-1.5">
+                  {(() => {
+                    const isOpenList = question.answer_display.length > 10
+                    return question.answer_display.map((display, i) => {
+                      const found = myCompletedFoundIndices.has(i)
+                      return (
+                        <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm"
+                          style={{
+                            background: found ? 'rgba(0,255,135,0.08)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
+                            border: `1px solid ${found ? 'rgba(0,255,135,0.25)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
+                          }}>
+                          <span className="font-display text-base w-6 text-center tabular" style={{ color: found ? 'var(--mint)' : 'var(--text-faint)' }}>
+                            {String(i + 1).padStart(2, '0')}
+                          </span>
+                          <span className="flex-1 font-semibold" style={{ color: found ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
+                          {found
+                            ? <span className="label-micro" style={{ color: 'var(--mint)' }}>⚽ GOAL</span>
+                            : isOpenList
+                              ? <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
+                              : <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
+                          }
+                        </div>
+                      )
+                    })
+                  })()}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -623,7 +736,8 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
     const medals = ['🥇', '🥈', '🥉']
     const suffixes = ['st', 'nd', 'rd']
     const iWon = myRank === 1
-    const maxGoals = totalRounds * 10
+    // Use actual answer count per round (fetched async), fall back to question.answers.length for single round
+    const maxGoals = maxGoalsTotal ?? (totalRounds === 1 ? Math.min(question.answers.length, 10) : totalRounds * 10)
     const myTotalShots = overallShotCounts[player?.id ?? ''] || 0
 
     function shareChallenge() {
@@ -731,23 +845,30 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
                 <span className="label-micro">{totalRounds > 1 ? `Round ${currentRound} Answers` : 'The Answers'}</span>
               </div>
               <div className="space-y-1.5">
-                {question.answer_display.map((display, i) => {
-                  const found = myFoundIndices.has(i)
-                  return (
-                    <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm"
-                      style={{
-                        background: found ? 'rgba(0,255,135,0.08)' : 'var(--surface-2)',
-                        border: `1px solid ${found ? 'rgba(0,255,135,0.25)' : 'var(--border)'}`,
-                      }}>
-                      <span className="font-display text-base w-6 text-center tabular" style={{ color: found ? 'var(--mint)' : 'var(--text-faint)' }}>
-                        {String(i + 1).padStart(2, '0')}
-                      </span>
-                      <span className="flex-1 font-semibold" style={{ color: found ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
-                      {found ? <span className="label-micro" style={{ color: 'var(--mint)' }}>⚽ GOAL</span>
-                              : <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>}
-                    </div>
-                  )
-                })}
+                {(() => {
+                  const isOpenList = question.answer_display.length > 10
+                  return question.answer_display.map((display, i) => {
+                    const found = myFoundIndices.has(i)
+                    return (
+                      <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm"
+                        style={{
+                          background: found ? 'rgba(0,255,135,0.08)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
+                          border: `1px solid ${found ? 'rgba(0,255,135,0.25)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
+                        }}>
+                        <span className="font-display text-base w-6 text-center tabular" style={{ color: found ? 'var(--mint)' : 'var(--text-faint)' }}>
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                        <span className="flex-1 font-semibold" style={{ color: found ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
+                        {found
+                          ? <span className="label-micro" style={{ color: 'var(--mint)' }}>⚽ GOAL</span>
+                          : isOpenList
+                            ? <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
+                            : <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
+                        }
+                      </div>
+                    )
+                  })
+                })()}
               </div>
             </div>
 
