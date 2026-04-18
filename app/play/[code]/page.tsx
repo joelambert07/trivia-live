@@ -661,24 +661,48 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
                 <div className="space-y-1.5">
                   {(() => {
                     const isOpenList = question.answer_display.length > 10
+                    const scorerMap: Record<number, string[]> = {}
+                    for (const a of allGameAnswers.filter(x => x.round_number === completedRound && x.matched_index !== null)) {
+                      const idx = a.matched_index!
+                      if (!scorerMap[idx]) scorerMap[idx] = []
+                      if (!scorerMap[idx].includes(a.player_id)) scorerMap[idx].push(a.player_id)
+                    }
                     return question.answer_display.map((display, i) => {
-                      const found = myCompletedFoundIndices.has(i)
+                      const iScored = myCompletedFoundIndices.has(i)
+                      const scorerIds = scorerMap[i] || []
+                      const anyScored = scorerIds.length > 0
                       return (
-                        <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm"
+                        <div key={i} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm"
                           style={{
-                            background: found ? 'rgba(0,255,135,0.08)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
-                            border: `1px solid ${found ? 'rgba(0,255,135,0.25)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
+                            background: iScored ? 'rgba(0,255,135,0.08)' : anyScored ? 'rgba(255,255,255,0.03)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
+                            border: `1px solid ${iScored ? 'rgba(0,255,135,0.25)' : anyScored ? 'rgba(255,255,255,0.08)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
                           }}>
-                          <span className="font-display text-base w-6 text-center tabular" style={{ color: found ? 'var(--mint)' : 'var(--text-faint)' }}>
+                          <span className="font-display text-base w-6 text-center tabular shrink-0" style={{ color: iScored ? 'var(--mint)' : 'var(--text-faint)' }}>
                             {String(i + 1).padStart(2, '0')}
                           </span>
-                          <span className="flex-1 font-semibold" style={{ color: found ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
-                          {found
-                            ? <span className="label-micro" style={{ color: 'var(--mint)' }}>⚽ GOAL</span>
-                            : isOpenList
-                              ? <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
-                              : <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
-                          }
+                          <span className="flex-1 font-semibold min-w-0 truncate" style={{ color: iScored ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
+                          <div className="flex items-center gap-1 flex-wrap justify-end shrink-0">
+                            {anyScored ? (
+                              scorerIds.map(pid => {
+                                const isMe = pid === player?.id
+                                const pName = allPlayers.find(p => p.id === pid)?.name || '?'
+                                return (
+                                  <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                                    style={{
+                                      background: isMe ? 'rgba(0,255,135,0.15)' : 'rgba(255,255,255,0.07)',
+                                      color: isMe ? 'var(--mint)' : 'var(--text-muted)',
+                                      border: `1px solid ${isMe ? 'rgba(0,255,135,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                                    }}>
+                                    {isMe ? `⚽ ${pName}` : pName}
+                                  </span>
+                                )
+                              })
+                            ) : isOpenList ? (
+                              <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
+                            ) : (
+                              <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
+                            )}
+                          </div>
                         </div>
                       )
                     })
@@ -863,24 +887,49 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
               <div className="space-y-1.5">
                 {(() => {
                   const isOpenList = question.answer_display.length > 10
+                  // Build who scored each answer this round
+                  const scorerMap: Record<number, string[]> = {}
+                  for (const a of allGameAnswers.filter(x => x.round_number === currentRound && x.matched_index !== null)) {
+                    const idx = a.matched_index!
+                    if (!scorerMap[idx]) scorerMap[idx] = []
+                    if (!scorerMap[idx].includes(a.player_id)) scorerMap[idx].push(a.player_id)
+                  }
                   return question.answer_display.map((display, i) => {
-                    const found = myFoundIndices.has(i)
+                    const iScored = myFoundIndices.has(i)
+                    const scorerIds = scorerMap[i] || []
+                    const anyScored = scorerIds.length > 0
                     return (
-                      <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm"
+                      <div key={i} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm"
                         style={{
-                          background: found ? 'rgba(0,255,135,0.08)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
-                          border: `1px solid ${found ? 'rgba(0,255,135,0.25)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
+                          background: iScored ? 'rgba(0,255,135,0.08)' : anyScored ? 'rgba(255,255,255,0.03)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
+                          border: `1px solid ${iScored ? 'rgba(0,255,135,0.25)' : anyScored ? 'rgba(255,255,255,0.08)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
                         }}>
-                        <span className="font-display text-base w-6 text-center tabular" style={{ color: found ? 'var(--mint)' : 'var(--text-faint)' }}>
+                        <span className="font-display text-base w-6 text-center tabular shrink-0" style={{ color: iScored ? 'var(--mint)' : 'var(--text-faint)' }}>
                           {String(i + 1).padStart(2, '0')}
                         </span>
-                        <span className="flex-1 font-semibold" style={{ color: found ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
-                        {found
-                          ? <span className="label-micro" style={{ color: 'var(--mint)' }}>⚽ GOAL</span>
-                          : isOpenList
-                            ? <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
-                            : <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
-                        }
+                        <span className="flex-1 font-semibold min-w-0 truncate" style={{ color: iScored ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
+                        <div className="flex items-center gap-1 flex-wrap justify-end shrink-0">
+                          {anyScored ? (
+                            scorerIds.map(pid => {
+                              const isMe = pid === player?.id
+                              const pName = allPlayers.find(p => p.id === pid)?.name || '?'
+                              return (
+                                <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                                  style={{
+                                    background: isMe ? 'rgba(0,255,135,0.15)' : 'rgba(255,255,255,0.07)',
+                                    color: isMe ? 'var(--mint)' : 'var(--text-muted)',
+                                    border: `1px solid ${isMe ? 'rgba(0,255,135,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                                  }}>
+                                  {isMe ? `⚽ ${pName}` : pName}
+                                </span>
+                              )
+                            })
+                          ) : isOpenList ? (
+                            <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
+                          ) : (
+                            <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
+                          )}
+                        </div>
                       </div>
                     )
                   })

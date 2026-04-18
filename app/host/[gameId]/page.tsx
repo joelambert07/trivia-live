@@ -790,10 +790,18 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
 
         {/* Answer reveals per round */}
         {Array.from({ length: totalRounds }, (_, ri) => {
-          const rq = questions.find(q => q.id === roundQIds[ri])
+          const qId = roundQIds[ri] ?? game.question_id
+          const rq = questions.find(q => q.id === qId)
           if (!rq) return null
           const rAnswers = allAnswers.filter(a => a.round_number === ri + 1)
-          const foundSet = new Set(rAnswers.map(a => a.matched_index))
+          // Build scorer map: answer index → player ids
+          const scorerMap: Record<number, string[]> = {}
+          for (const a of rAnswers) {
+            if (a.matched_index !== null) {
+              if (!scorerMap[a.matched_index]) scorerMap[a.matched_index] = []
+              if (!scorerMap[a.matched_index].includes(a.player_id)) scorerMap[a.matched_index].push(a.player_id)
+            }
+          }
           return (
             <div key={ri} className="card p-5">
               <div className="flex items-center gap-3 mb-4">
@@ -807,21 +815,33 @@ export default function HostPage({ params }: { params: Promise<{ gameId: string 
                 {(() => {
                   const isOpenList = rq.answer_display.length > 10
                   return rq.answer_display.map((display, i) => {
-                    const found = foundSet.has(i)
+                    const scorerIds = scorerMap[i] || []
+                    const anyScored = scorerIds.length > 0
                     return (
-                      <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm"
+                      <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
                         style={{
-                          background: found ? 'rgba(0,255,135,0.06)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'rgba(255,45,85,0.04)',
-                          border: `1px solid ${found ? 'rgba(0,255,135,0.2)' : isOpenList ? 'rgba(255,255,255,0.07)' : 'rgba(255,45,85,0.15)'}`,
+                          background: anyScored ? 'rgba(0,255,135,0.06)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'rgba(255,45,85,0.04)',
+                          border: `1px solid ${anyScored ? 'rgba(0,255,135,0.2)' : isOpenList ? 'rgba(255,255,255,0.07)' : 'rgba(255,45,85,0.15)'}`,
                         }}>
-                        <span className="font-display tabular text-sm w-6" style={{ color: 'var(--text-muted)' }}>{i + 1}</span>
-                        <span className="flex-1 font-medium" style={{ color: found ? 'var(--mint)' : 'var(--text-muted)' }}>{display}</span>
-                        {found
-                          ? null
-                          : isOpenList
-                            ? <span className="text-[10px] font-semibold tracking-wider" style={{ color: 'var(--text-faint)' }}>also valid</span>
-                            : <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--red)' }}>MISSED</span>
-                        }
+                        <span className="font-display tabular text-sm w-6 shrink-0" style={{ color: 'var(--text-muted)' }}>{i + 1}</span>
+                        <span className="flex-1 font-medium min-w-0 truncate" style={{ color: anyScored ? 'var(--mint)' : 'var(--text-muted)' }}>{display}</span>
+                        <div className="flex items-center gap-1 flex-wrap justify-end shrink-0">
+                          {anyScored ? (
+                            scorerIds.map(pid => {
+                              const pName = players.find(p => p.id === pid)?.name || '?'
+                              return (
+                                <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                                  style={{ background: 'rgba(0,255,135,0.12)', color: 'var(--mint)', border: '1px solid rgba(0,255,135,0.25)' }}>
+                                  ⚽ {pName}
+                                </span>
+                              )
+                            })
+                          ) : isOpenList ? (
+                            <span className="text-[10px] font-semibold tracking-wider" style={{ color: 'var(--text-faint)' }}>also valid</span>
+                          ) : (
+                            <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--red)' }}>MISSED</span>
+                          )}
+                        </div>
                       </div>
                     )
                   })
