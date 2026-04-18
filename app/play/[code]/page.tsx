@@ -127,8 +127,14 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
     setGame(updated)
     if (updated.question_id) loadQuestion(updated.question_id)
     if (updated.status === 'active') {
-      setPhase('playing')
-      setTimeout(() => inputRef.current?.focus(), 300)
+      // Only transition to playing if the round hasn't already ended.
+      // Stale polls can return 'active' right after the timer expires —
+      // don't let that flip us back from between_rounds → playing.
+      const endsAt = updated.ends_at ? new Date(updated.ends_at).getTime() : Infinity
+      if (Date.now() < endsAt) {
+        setPhase('playing')
+        setTimeout(() => inputRef.current?.focus(), 300)
+      }
     }
     if (updated.status === 'between_rounds') {
       setPhase('between_rounds')
