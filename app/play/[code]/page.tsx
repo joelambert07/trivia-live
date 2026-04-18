@@ -57,6 +57,7 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   const [shots, setShots] = useState(0)   // current round shots
   const [joining, setJoining] = useState(false)
   const [maxGoalsTotal, setMaxGoalsTotal] = useState<number | null>(null)
+  const [allRoundQuestions, setAllRoundQuestions] = useState<Question[]>([])
   const [ambiguousHint, setAmbiguousHint] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const submitting = useRef(false)
@@ -198,15 +199,17 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, game?.current_round])
 
-  // When the game finishes, compute the true max goals using actual question answer counts
+  // When the game finishes, load all round questions and compute the true max goals
   useEffect(() => {
     if (phase !== 'finished' || !game) return
     const qIds = (game.round_question_ids || []).filter(Boolean).slice(0, game.total_rounds || 1)
     if (qIds.length === 0) return
-    supabase.from('questions').select('id, answers').in('id', qIds).then(({ data }) => {
+    supabase.from('questions').select('*').in('id', qIds).then(({ data }) => {
       if (!data) return
+      const qs = data as Question[]
+      setAllRoundQuestions(qs)
       const countMap: Record<string, number> = {}
-      for (const q of data as { id: string; answers: unknown[] }[]) countMap[q.id] = q.answers.length
+      for (const q of qs) countMap[q.id] = q.answers.length
       setMaxGoalsTotal(qIds.reduce((sum, id) => sum + Math.min(countMap[id] ?? 10, 10), 0))
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -666,37 +669,32 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
                     return question.answer_display.map((display, i) => {
                       const iScored = myCompletedFoundIndices.has(i)
                       const scorerIds = scorerMap[i] || []
-                      const anyScored = scorerIds.length > 0
+                      const otherNames = scorerIds
+                        .filter(id => id !== player?.id)
+                        .map(id => allPlayers.find(p => p.id === id)?.name)
+                        .filter(Boolean) as string[]
+                      const anyoneScored = scorerIds.length > 0
                       return (
                         <div key={i} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm"
                           style={{
-                            background: iScored ? 'rgba(0,255,135,0.08)' : anyScored ? 'rgba(255,255,255,0.03)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
-                            border: `1px solid ${iScored ? 'rgba(0,255,135,0.25)' : anyScored ? 'rgba(255,255,255,0.08)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
+                            background: iScored ? 'rgba(0,255,135,0.08)' : anyoneScored ? 'rgba(255,255,255,0.03)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
+                            border: `1px solid ${iScored ? 'rgba(0,255,135,0.25)' : anyoneScored ? 'rgba(255,255,255,0.08)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
                           }}>
                           <span className="font-display text-base w-6 text-center tabular shrink-0" style={{ color: iScored ? 'var(--mint)' : 'var(--text-faint)' }}>
                             {String(i + 1).padStart(2, '0')}
                           </span>
                           <span className="flex-1 font-semibold min-w-0 truncate" style={{ color: iScored ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
-                          <div className="flex items-center gap-1 flex-wrap justify-end shrink-0">
-                            {anyScored ? (
-                              scorerIds.map(pid => {
-                                const isMe = pid === player?.id
-                                const pName = allPlayers.find(p => p.id === pid)?.name || '?'
-                                return (
-                                  <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
-                                    style={{
-                                      background: isMe ? 'rgba(0,255,135,0.15)' : 'rgba(255,255,255,0.07)',
-                                      color: isMe ? 'var(--mint)' : 'var(--text-muted)',
-                                      border: `1px solid ${isMe ? 'rgba(0,255,135,0.3)' : 'rgba(255,255,255,0.1)'}`,
-                                    }}>
-                                    {isMe ? `⚽ ${pName}` : pName}
-                                  </span>
-                                )
-                              })
-                            ) : isOpenList ? (
-                              <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
-                            ) : (
-                              <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
+                          <div className="flex items-center gap-1.5 shrink-0 text-right">
+                            {iScored && <span className="label-micro" style={{ color: 'var(--mint)' }}>⚽ YOU</span>}
+                            {otherNames.length > 0 && (
+                              <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>
+                                {otherNames.length <= 2 ? otherNames.join(', ') : `+${otherNames.length} others`}
+                              </span>
+                            )}
+                            {!iScored && otherNames.length === 0 && (
+                              isOpenList
+                                ? <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
+                                : <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
                             )}
                           </div>
                         </div>
@@ -874,64 +872,75 @@ export default function PlayPage({ params }: { params: Promise<{ code: string }>
               </div>
             </div>
 
-            {/* Answer reveal for last round */}
-            <div className="card p-5">
-              <div className="flex items-center gap-3 mb-4 pb-3 border-b" style={{ borderColor: 'var(--border)' }}>
-                <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
-                <span className="label-micro">{totalRounds > 1 ? `Round ${currentRound} Answers` : 'The Answers'}</span>
-              </div>
-              <div className="space-y-1.5">
-                {(() => {
-                  const isOpenList = question.answer_display.length > 10
-                  // Build who scored each answer this round
-                  const scorerMap: Record<number, string[]> = {}
-                  for (const a of allGameAnswers.filter(x => x.round_number === currentRound && x.matched_index !== null)) {
-                    const idx = a.matched_index!
-                    if (!scorerMap[idx]) scorerMap[idx] = []
-                    if (!scorerMap[idx].includes(a.player_id)) scorerMap[idx].push(a.player_id)
+            {/* Answer reveals — one card per round */}
+            {(() => {
+              const roundQIds = (game?.round_question_ids || []).filter(Boolean).slice(0, totalRounds)
+              return roundQIds.map((qId, ri) => {
+                // Use pre-loaded allRoundQuestions; fall back to `question` for last round
+                const rq = allRoundQuestions.find(q => q.id === qId) ?? (ri === totalRounds - 1 ? question : null)
+                if (!rq) return null
+                const rRound = ri + 1
+                const rAnswers = allGameAnswers.filter(a => a.round_number === rRound)
+                const myRoundFound = new Set(
+                  allGameAnswers.filter(a => a.player_id === player?.id && a.round_number === rRound).map(a => a.matched_index)
+                )
+                const scorerMap: Record<number, string[]> = {}
+                for (const a of rAnswers) {
+                  if (a.matched_index !== null) {
+                    if (!scorerMap[a.matched_index]) scorerMap[a.matched_index] = []
+                    if (!scorerMap[a.matched_index].includes(a.player_id)) scorerMap[a.matched_index].push(a.player_id)
                   }
-                  return question.answer_display.map((display, i) => {
-                    const iScored = myFoundIndices.has(i)
-                    const scorerIds = scorerMap[i] || []
-                    const anyScored = scorerIds.length > 0
-                    return (
-                      <div key={i} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm"
-                        style={{
-                          background: iScored ? 'rgba(0,255,135,0.08)' : anyScored ? 'rgba(255,255,255,0.03)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
-                          border: `1px solid ${iScored ? 'rgba(0,255,135,0.25)' : anyScored ? 'rgba(255,255,255,0.08)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
-                        }}>
-                        <span className="font-display text-base w-6 text-center tabular shrink-0" style={{ color: iScored ? 'var(--mint)' : 'var(--text-faint)' }}>
-                          {String(i + 1).padStart(2, '0')}
-                        </span>
-                        <span className="flex-1 font-semibold min-w-0 truncate" style={{ color: iScored ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
-                        <div className="flex items-center gap-1 flex-wrap justify-end shrink-0">
-                          {anyScored ? (
-                            scorerIds.map(pid => {
-                              const isMe = pid === player?.id
-                              const pName = allPlayers.find(p => p.id === pid)?.name || '?'
-                              return (
-                                <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
-                                  style={{
-                                    background: isMe ? 'rgba(0,255,135,0.15)' : 'rgba(255,255,255,0.07)',
-                                    color: isMe ? 'var(--mint)' : 'var(--text-muted)',
-                                    border: `1px solid ${isMe ? 'rgba(0,255,135,0.3)' : 'rgba(255,255,255,0.1)'}`,
-                                  }}>
-                                  {isMe ? `⚽ ${pName}` : pName}
-                                </span>
-                              )
-                            })
-                          ) : isOpenList ? (
-                            <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
-                          ) : (
-                            <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
-                          )}
-                        </div>
+                }
+                const isOpenList = rq.answer_display.length > 10
+                return (
+                  <div key={ri} className="card p-5">
+                    <div className="flex items-center gap-3 mb-4 pb-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                      <div className="w-1 h-5 rounded-full" style={{ background: 'var(--mint)' }} />
+                      <div className="flex-1 min-w-0">
+                        <span className="label-micro block">{totalRounds > 1 ? `Round ${rRound} Answers` : 'The Answers'}</span>
+                        {totalRounds > 1 && <span className="text-xs truncate block" style={{ color: 'var(--text-muted)' }}>{rq.question}</span>}
                       </div>
-                    )
-                  })
-                })()}
-              </div>
-            </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      {rq.answer_display.map((display, i) => {
+                        const iScored = myRoundFound.has(i)
+                        const scorerIds = scorerMap[i] || []
+                        const otherNames = scorerIds
+                          .filter(id => id !== player?.id)
+                          .map(id => allPlayers.find(p => p.id === id)?.name)
+                          .filter(Boolean) as string[]
+                        const anyoneScored = scorerIds.length > 0
+                        return (
+                          <div key={i} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm"
+                            style={{
+                              background: iScored ? 'rgba(0,255,135,0.08)' : anyoneScored ? 'rgba(255,255,255,0.03)' : isOpenList ? 'rgba(255,255,255,0.02)' : 'var(--surface-2)',
+                              border: `1px solid ${iScored ? 'rgba(0,255,135,0.25)' : anyoneScored ? 'rgba(255,255,255,0.08)' : isOpenList ? 'rgba(255,255,255,0.06)' : 'var(--border)'}`,
+                            }}>
+                            <span className="font-display text-base w-6 text-center tabular shrink-0" style={{ color: iScored ? 'var(--mint)' : 'var(--text-faint)' }}>
+                              {String(i + 1).padStart(2, '0')}
+                            </span>
+                            <span className="flex-1 font-semibold min-w-0 truncate" style={{ color: iScored ? 'var(--text)' : 'var(--text-muted)' }}>{display}</span>
+                            <div className="flex items-center gap-1.5 shrink-0 text-right">
+                              {iScored && <span className="label-micro" style={{ color: 'var(--mint)' }}>⚽ YOU</span>}
+                              {otherNames.length > 0 && (
+                                <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>
+                                  {otherNames.length <= 2 ? otherNames.join(', ') : `+${otherNames.length} others`}
+                                </span>
+                              )}
+                              {!iScored && otherNames.length === 0 && (
+                                isOpenList
+                                  ? <span className="label-micro" style={{ color: 'var(--text-faint)' }}>also valid</span>
+                                  : <span className="label-micro" style={{ color: 'var(--red)' }}>MISSED</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })
+            })()}
 
             {/* Challenge buttons */}
             <div className="flex gap-3">
